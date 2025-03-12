@@ -17,8 +17,8 @@ synth = Synthesizer(
     sample_rate = sample_rate, # the sample rate of the output wave, sample_rate is the default value
 )
 #%%
-model = transformers.AutoModelForCausalLM.from_pretrained("Natooz/Maestro-TSD-bpe20k", trust_remote_code=True, torch_dtype="auto")
-tokenizer = miditok.REMI.from_pretrained("Natooz/Maestro-TSD-bpe20k")
+model = transformers.AutoModelForCausalLM.from_pretrained("krasserm/perceiver-ar-sam-giant-midi", trust_remote_code=True, torch_dtype="auto")
+tokenizer = miditok.REMI.from_pretrained("krasserm/perceiver-ar-sam-giant-midi")
 
 
 OUTPUT_DIR = "artefacts/hello-world-3"
