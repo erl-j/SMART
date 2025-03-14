@@ -82,18 +82,27 @@ tokenizer.eos_token_id = tokenizer.vocab["[PAD]"]
 
 
 # this one is passed to model to generate
-INPUT_PROMPT = "PIECE_START GENRE=JAZZ TRACK_START"
+INPUT_PROMPT = "PIECE_START GENRE=CLASSICAL TRACK_START"
 # this one is just used for decoding
-OUTPUT_PROMPT = "PIECE_START GENRE=JAZZ TRACK_START"
+OUTPUT_PROMPT = "PIECE_START GENRE=CLASSICAL TRACK_START"
 
 # takes whatever comes out of the tokenizer decode and returns a dict with midi, wav, token_ids, str
 def render(x):
     output_str = OUTPUT_PROMPT + " " + x
-    with tempfile.NamedTemporaryFile(suffix=".mid") as f:
-        filepath = get_midi_from_string(output_str, f.name, qpm=24)
-        midi = symusic.Score(filepath)
-    # render the midi file
-    audio = synth.render(midi)
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".mid") as f:
+            filepath = get_midi_from_string(output_str, f.name, qpm=24)
+            midi = symusic.Score(filepath)
+    except Exception as e:
+        midi = symusic.Score()
+        audio = torch.zeros(1, 44100*5)
+        print(f"Error rendering midi: {e}")
+    try:
+        # render the midi file
+        audio = synth.render(midi)
+    except Exception as e:
+        print(f"Error rendering audio: {e}")
+        audio = torch.zeros(1, 44100*5)
     return {"token_ids": x, "midi": midi, "wav": audio, "str": output_str}
 
 def gen():
@@ -104,7 +113,7 @@ ds = Dataset.from_generator(gen)
 
 #%%
 
-OUTPUT_DIR = "artefacts/hello-world-6"
+OUTPUT_DIR = "artefacts/hello-world-14"
 
 #%%
 #%%
@@ -122,12 +131,16 @@ def aes_reward(completions, **kwargs):
     completions = [render(completions[i]) for i in range(len(completions))]
     # sms = [tokenizer(completions[i].cpu().numpy()[None,...] ) for i in range(completions.shape[0])]
     sms = [completions[i]["midi"] for i in range(len(completions))]
-    print(f"Rendering to audio")
-    audio = [synth.render(sm) for sm in sms]
+    audio = [completions[i]["wav"] for i in range(len(completions))]
+    # crop audio to max 30 seconds
+    for i in range(len(audio)):
+        if audio[i].shape[1] > 44100*30:
+            audio[i] = audio[i][:, :44100*30]
     predictor_inputs = [{"path": torch.tensor(audio[i]).float(), "sample_rate": 44100} for i in range(len(audio))]
     print(f"Predicting aesthetics")
     scores = aes_predictor.forward(predictor_inputs)
-    rewards = [score["CE"] for score in scores]
+    # take mean of CE, CU, PC, PQ
+    rewards = [sum([score["CE"], score["CU"], score["PC"], score["PQ"]]) for score in scores]
     print(f"average reward: {sum(rewards)/len(rewards)}")
     print(f"Rewards: {rewards}")
     global reward_step
@@ -147,7 +160,7 @@ os.environ["WANDB_PROJECT"] = "music-grpo"  # name your W&B project
 os.environ["WANDB_LOG_MODEL"] = "false"
 
 
-config = GRPOConfig(output_dir=OUTPUT_DIR, max_completion_length=50, num_train_epochs=100_000, learning_rate=1e-5, report_to="wandb", logging_steps=1, num_generations=8)
+config = GRPOConfig(temperature=0.75, output_dir=OUTPUT_DIR, max_completion_length=100, num_train_epochs=100_000, learning_rate=1e-5, report_to="wandb", logging_steps=1, num_generations=16,per_device_train_batch_size=16, beta=0.5)
 trainer = GRPOTrainer(
     model=model,
     reward_funcs=aes_reward,
