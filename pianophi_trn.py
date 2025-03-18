@@ -8,8 +8,25 @@ from datasets import Dataset, load_dataset
 from symusic import Synthesizer, BuiltInSF3, dump_wav
 from audiobox_aesthetics.infer import initialize_predictor
 
+#%%
 
-sample_rate = 44100
+from datasets import load_dataset
+from transformers import ClapModel, ClapProcessor
+
+clap_model = ClapModel.from_pretrained("laion/larger_clap_music").to(0)
+clap_processor = ClapProcessor.from_pretrained("laion/larger_clap_music")
+sample_rate = 48_000
+
+
+def get_clap_features(audio_samples):
+    audio_samples = [audio_samples[i].mean(0) for i in range(len(audio_samples))]
+    inputs = clap_processor(audios=audio_samples, return_tensors="pt", sampling_rate=sample_rate).to(0)
+    print(f"inputs: {inputs}")
+    audio_embed = clap_model.get_audio_features(**inputs)
+    return audio_embed
+
+#%%
+
 sf_path = BuiltInSF3.MuseScoreGeneral().path(download=True)
 
 synth = Synthesizer(
@@ -21,7 +38,7 @@ model = transformers.AutoModelForCausalLM.from_pretrained("lucacasini/metamidipi
 tokenizer = miditok.REMI.from_pretrained("lucacasini/metamidipianophi3")
 
 
-OUTPUT_DIR = "artefacts/pianophi-kl=0.1"
+OUTPUT_DIR = "artefacts/pianophi-kl=0.1-diversity"
 #%%
 def gen():
     yield {"prompt": ""}
@@ -41,6 +58,29 @@ aes_predictor = initialize_predictor()
 SAVE_INTERVAL = 100
 reward_step = 0
 
+import torch.nn.functional as F
+
+def get_nn_sim(embeddings, k=2, include_self=False):
+    # Normalize embeddings to unit length for cosine similarity
+    normalized_embeds = F.normalize(embeddings, p=2, dim=1)
+    
+    # Compute cosine similarity matrix
+    sim_matrix = torch.matmul(normalized_embeds, normalized_embeds.T)
+    
+    # Handle self-similarity
+    if not include_self:
+        # Set diagonal to -1 so it won't be selected in topk
+        sim_matrix.fill_diagonal_(-1.0)
+    
+    # Get top-k similarities for each sample
+    topk_sims = sim_matrix.topk(k, dim=1).values
+    
+    # Compute mean similarity for each sample
+    mean_sims = topk_sims.mean(dim=1)
+    
+    # Lower value indicates more sparsity
+    return mean_sims
+
 def aes_reward(completions, **kwargs):
     print(f"Decoding to MIDI")
     sms = [tokenizer(completions[i].cpu().numpy()[None,...] ) for i in range(completions.shape[0])]
@@ -56,6 +96,24 @@ def aes_reward(completions, **kwargs):
     # take mean of CE, CU, PC, PQ
     rewards = [sum([score["CE"], score["CU"], score["PC"], score["PQ"]]) for score in scores]
     # rewards = [score["CE"] for score in scores]
+    # def get clap features
+    audio_embed = get_clap_features(audio)
+    print(f"audio_embed: {audio_embed.shape}")
+
+    # get matmul of audio_embed
+    nn_sim = get_nn_sim(audio_embed, k=1)
+    print(f"nn_sim: {nn_sim}")
+
+    nn_sim_argsort = nn_sim.argsort(descending=True)
+
+    # add to rewards
+    rewards = [rewards[i] + nn_sim_argsort[i] for i in range(len(rewards))]
+
+    # give points according to highest sparsity
+
+    
+
+    # 
 
     # rewards = [float(sm.note_num()) for sm in sms]
     print(f"average reward: {sum(rewards)/len(rewards)}")
