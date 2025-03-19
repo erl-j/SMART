@@ -2,13 +2,23 @@
 
 import symusic
 from tqdm import tqdm
+import seaborn as sns
+import matplotlib.pyplot as plt
+import glob
+import pandas as pd
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.animation import FuncAnimation
+from IPython.display import HTML
+import matplotlib
+
+
 # data format
-checkpoint_name = "./artefacts/pianophi-kl=0.1"
+checkpoint_name = "./artefacts/pianophi-kl=0.1-frequent-logs-32"
 
 # load the tokenizer
 # %%
-import glob
-import pandas as pd
 
 midi_paths = glob.glob(f"{checkpoint_name}/fs_renders/**/*.mid", recursive=True)
 
@@ -36,17 +46,47 @@ def get_intervals(pitches):
         intervals.append(pitches[i+1] - pitches[i])
     return intervals
             
+# get durations over time
+def get_durations(score):
+    durations = []
+    for track in score.tracks:
+        for note in track.notes:
+            durations.append(note.duration)
+    return durations
+
+# get number of notes
+def get_num_notes(score):
+    num_notes = 0
+    for track in score.tracks:
+        num_notes += len(track.notes)
+    return num_notes
+
+# get score duration 
+def get_score_duration(score):
+    score = score.copy()
+    # switch to seconds
+    score = score.to(symusic.TimeUnit.second)
+    return score.end()
+
+def get_interonset_times(score):
+    interonset_times = []
+    for track in score.tracks:
+        for i in range(len(track.notes)-1):
+            interonset_times.append(track.notes[i+1].start - track.notes[i].start)
+    return interonset_times
+
+def get_chroma(score):
+    chroma = []
+    for track in score.tracks:
+        for note in track.notes:
+            chroma.append(note.pitch % 12)
+    return chroma
 
 df["pitches"] = df["score"].apply(get_pitches)
 df["intervals"] = df["pitches"].apply(get_intervals)
-
-# show scatterplot of reward across steps
-import seaborn as sns
-import matplotlib.pyplot as plt
-sns.scatterplot(data=df, x="step", y="reward", alpha=0.25)
-plt.show()
-
-#%%
+df["chroma"] = df["score"].apply(get_chroma)
+df["pitch_mean"] = df["pitches"].apply(np.mean)
+df["pitch_variance"] = df["intervals"].apply(np.mean)
 
 # show scatterplot of pitches for each step
 def flatten_list(l):
@@ -61,10 +101,48 @@ step_intervals = df.groupby("step")["intervals"].apply(list)
 step_intervals = step_intervals.reset_index()
 step_intervals["intervals"] = step_intervals["intervals"].apply(flatten_list)
 
+# show scatterplot of reward across steps
+
+sns.scatterplot(data=df, x="step", y="reward", alpha=0.25)
+plt.show()
+
 # %%
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
+
+# show scatterplot of mean pitch across steps
+sns.scatterplot(data=df, x="step", y="pitch_mean", alpha=0.25)
+plt.show()
+
+# show scatterplot of pitch variance across steps
+sns.scatterplot(data=df, x="step", y="pitch_variance", alpha=0.25)
+plt.show()
+
+
+#%%
+
+# plot chroma distribution over time
+
+step_chroma = df.groupby("step")["chroma"].apply(list)
+step_chroma = step_chroma.reset_index()
+step_chroma["chroma"] = step_chroma["chroma"].apply(flatten_list)
+
+# make heatmap of chroma distribution over time
+chroma_matrix = np.zeros((12, len(step_chroma["step"])))
+for i, step in enumerate(step_chroma["step"]):
+    chroma = step_chroma[step_chroma["step"] == step]["chroma"].values[0]
+    for c in chroma:
+        chroma_matrix[c, i] += 1
+
+plt.figure(figsize=(14, 8))
+ax = sns.heatmap(chroma_matrix, cmap='viridis')
+plt.ylabel('Chroma Value')
+plt.xlabel('Time Step')
+plt.title('Chroma Distribution Over Time')
+plt.yticks(np.arange(12), np.arange(12))
+plt.xticks(np.arange(len(step_chroma["step"])), step_chroma["step"])
+plt.tight_layout()
+plt.show()
+#%%
+
 
 # For pitches heatmap
 plt.figure(figsize=(14, 8))
@@ -137,17 +215,7 @@ plt.xticks(np.arange(len(steps)), steps)
 plt.tight_layout()
 plt.show()
 
-
 #%%
-
-
-# get durations over time
-def get_durations(score):
-    durations = []
-    for track in score.tracks:
-        for note in track.notes:
-            durations.append(note.duration)
-    return durations
 
 df["durations"] = df["score"].apply(get_durations)
 print(df.head())
@@ -162,12 +230,7 @@ for step in step_durations["step"]:
 plt.title("Note durations over time")
 plt.show()
 
-def get_interonset_times(score):
-    interonset_times = []
-    for track in score.tracks:
-        for i in range(len(track.notes)-1):
-            interonset_times.append(track.notes[i+1].start - track.notes[i].start)
-    return interonset_times
+
 
 df["interonset_times"] = df["score"].apply(get_interonset_times)
 step_interonset_times = df.groupby("step")["interonset_times"].apply(list)
@@ -181,12 +244,7 @@ plt.title("Interonset times over time")
 plt.show()
 
 #%%
-# get number of notes
-def get_num_notes(score):
-    num_notes = 0
-    for track in score.tracks:
-        num_notes += len(track.notes)
-    return num_notes
+
 
 df["num_notes"] = df["score"].apply(get_num_notes)
 step_num_notes = df.groupby("step")["num_notes"].apply(list)
@@ -202,12 +260,6 @@ plt.show()
 
 #%%
 
-# get score duration 
-def get_score_duration(score):
-    score = score.copy()
-    # switch to seconds
-    score = score.to(symusic.TimeUnit.second)
-    return score.end()
 df["score_duration"] = df["score"].apply(get_score_duration)
 step_score_duration = df.groupby("step")["score_duration"].apply(list)
 step_score_duration = step_score_duration.reset_index()
@@ -221,14 +273,8 @@ plt.show()
 
 #%%
 #%%
-import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
-from matplotlib.animation import FuncAnimation
-from IPython.display import HTML
 
 # Make sure we're using a non-interactive backend for animation
-import matplotlib
 matplotlib.use('Agg')
 
 # Create animated histogram for pitches

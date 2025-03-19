@@ -13,17 +13,20 @@ from audiobox_aesthetics.infer import initialize_predictor
 from datasets import load_dataset
 from transformers import ClapModel, ClapProcessor
 
-clap_model = ClapModel.from_pretrained("laion/larger_clap_music").to(0)
-clap_processor = ClapProcessor.from_pretrained("laion/larger_clap_music")
 sample_rate = 48_000
 
+# clap_model = ClapModel.from_pretrained("laion/larger_clap_music").to(0)
+# clap_processor = ClapProcessor.from_pretrained("laion/larger_clap_music")
 
-def get_clap_features(audio_samples):
-    audio_samples = [audio_samples[i].mean(0) for i in range(len(audio_samples))]
-    inputs = clap_processor(audios=audio_samples, return_tensors="pt", sampling_rate=sample_rate).to(0)
-    print(f"inputs: {inputs}")
-    audio_embed = clap_model.get_audio_features(**inputs)
-    return audio_embed
+# def get_clap_features(audio_samples):
+#     audio_samples = [audio_samples[i].mean(0) for i in range(len(audio_samples))]
+#     inputs = clap_processor(audios=audio_samples, return_tensors="pt", sampling_rate=sample_rate).to(0)
+#     print(f"inputs: {inputs}")
+#     audio_embed = clap_model.get_audio_features(**inputs)
+#     return audio_embed
+
+MAX_AUDIO_DURATION = 10
+
 
 #%%
 
@@ -38,7 +41,24 @@ model = transformers.AutoModelForCausalLM.from_pretrained("lucacasini/metamidipi
 tokenizer = miditok.REMI.from_pretrained("lucacasini/metamidipianophi3")
 
 
-OUTPUT_DIR = "artefacts/pianophi-kl=0.1-diversity"
+OUTPUT_DIR = "artefacts/pianophi-kl=0.1-frequent-logs-32-program=24"
+
+PIANO_PROGRAM = 24
+
+#%%
+
+def set_piano_program(sm):
+    for track in sm.tracks:
+        track.program = PIANO_PROGRAM
+    return sm
+
+def set_to_drums(sm):
+    for track in sm.tracks:
+        track.is_drum = True
+    return sm
+
+
+
 #%%
 def gen():
     yield {"prompt": ""}
@@ -55,10 +75,15 @@ def reward_len(completions, **kwargs):
 
 aes_predictor = initialize_predictor()
 
-SAVE_INTERVAL = 100
+SAVE_INTERVAL = 1
 reward_step = 0
 
 import torch.nn.functional as F
+
+
+
+
+
 
 def get_nn_sim(embeddings, k=2, include_self=False):
     # Normalize embeddings to unit length for cosine similarity
@@ -81,38 +106,70 @@ def get_nn_sim(embeddings, k=2, include_self=False):
     # Lower value indicates more sparsity
     return mean_sims
 
+
+
+def get_aes_scores(records):
+    # prepare inputs. 
+    predictor_inputs = [{"path": torch.tensor(record["audio"]).float(), "sample_rate": sample_rate, "idx":i} for i, record in enumerate(records) if record["audio"] is not None]
+    print(f"Predicting aesthetics")
+    scores = aes_predictor.forward(predictor_inputs)
+    # put back scores to records that have audio
+    record_with_audio_index = 0
+    for i, record in enumerate(records):
+        if record["audio"] is not None:
+            record["aes_scores"] = scores[record_with_audio_index]
+            record_with_audio_index += 1
+        else:
+            record["aes_scores"] = None
+    return records
+
 def aes_reward(completions, **kwargs):
+
     print(f"Decoding to MIDI")
     sms = [tokenizer(completions[i].cpu().numpy()[None,...] ) for i in range(completions.shape[0])]
 
+    # set piano program
+    sms = [set_piano_program(sm) for
+        sm
+        in sms
+    ]
+
+    # sms = [set_to_drums(sm) for
+    #     sm
+    #     in sms
+    # ]
+
+    records = [{"completion": completions[i], "sm": sms[i]} for i in range(completions.shape[0])]
 
 
-    print(f"Rendering to audio")
-    audio = [synth.render(sm) for sm in sms]
-    predictor_inputs = [{"path": torch.tensor(audio[i]).float(), "sample_rate": 44100} for i in range(len(audio))]
-    print(f"Predicting aesthetics")
-    scores = aes_predictor.forward(predictor_inputs)
+    for record in records:
+        try:
+            record["audio"] = synth.render(record["sm"])
+            # if audio is too long, crop it
+            if record["audio"].shape[1] > MAX_AUDIO_DURATION * sample_rate:
+                record["audio"] = record["audio"][:,:MAX_AUDIO_DURATION * sample_rate]
+        except Exception as e:
+            print(f"Error rendering audio: {e}")
+            record["audio"] = None
+    
+    records = get_aes_scores(records)
+
+
 
     # take mean of CE, CU, PC, PQ
-    rewards = [sum([score["CE"], score["CU"], score["PC"], score["PQ"]]) for score in scores]
+    rewards = [sum([record["aes_scores"]["CE"], record["aes_scores"]["CU"], record["aes_scores"]["PC"], record["aes_scores"]["PQ"]]) if record["aes_scores"] is not None else 0 for record in records]
     # rewards = [score["CE"] for score in scores]
     # def get clap features
-    audio_embed = get_clap_features(audio)
-    print(f"audio_embed: {audio_embed.shape}")
-
-    # get matmul of audio_embed
-    nn_sim = get_nn_sim(audio_embed, k=1)
-    print(f"nn_sim: {nn_sim}")
-
-    nn_sim_argsort = nn_sim.argsort(descending=True)
-
-    # add to rewards
-    rewards = [rewards[i] + nn_sim_argsort[i] for i in range(len(rewards))]
+    # audio_embed = get_clap_features(audio)
+    # print(f"audio_embed: {audio_embed.shape}")
+    # # get matmul of audio_embed
+    # nn_sim = get_nn_sim(audio_embed, k=1)
+    # print(f"nn_sim: {nn_sim}")
+    # nn_sim_argsort = nn_sim.argsort(descending=True)
+    # # add to rewards
+    # rewards = [rewards[i] + nn_sim_argsort[i] for i in range(len(rewards))]
 
     # give points according to highest sparsity
-
-    
-
     # 
 
     # rewards = [float(sm.note_num()) for sm in sms]
@@ -125,8 +182,10 @@ def aes_reward(completions, **kwargs):
         os.makedirs(f"{OUTPUT_DIR}/fs_renders/{reward_step}", exist_ok=True)
         for i in range(len(sms)):
             sms[i].dump_midi(f"{OUTPUT_DIR}/fs_renders/{reward_step}/reward={rewards[i]}_{i}.mid")
-            dump_wav( f"{OUTPUT_DIR}/fs_renders/{reward_step}/reward={rewards[i]}_{i}.wav", audio[i], sample_rate, use_int16=True)
-
+            try:
+                dump_wav( f"{OUTPUT_DIR}/fs_renders/{reward_step}/reward={rewards[i]}_{i}.wav", records[i]["audio"], sample_rate, use_int16=True)
+            except Exception as e:
+                print(f"Error dumping wav: {e}")
     reward_step += 1
     return rewards
 
@@ -171,14 +230,14 @@ import os
 os.environ["WANDB_PROJECT"] = "music-grpo"  # name your W&B project
 os.environ["WANDB_LOG_MODEL"] = "false"
 
-BATCH_SIZE=16
+BATCH_SIZE=64
 
 config = GRPOConfig(
     temperature=1.0,
     output_dir=OUTPUT_DIR,
     max_completion_length=250,
     max_prompt_length=1,
-    num_train_epochs=100_000,
+    num_train_epochs=200,
     learning_rate=1e-5,
     report_to="wandb",
     logging_steps=1,
