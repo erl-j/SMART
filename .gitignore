@@ -2,7 +2,7 @@ artefacts/
 wandb/
 session-gpt/
 data/
-
+soundfonts/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

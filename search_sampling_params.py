@@ -64,7 +64,7 @@ def gen():
                         random.choice(pitch_tokens), 
                         random.choice(velocity_tokens)]
             }
-ds = Dataset.from_generator(gen)
+ds = Dataset.from_generator(lambda x: gen(1_000_000))
 
 #%%
 
@@ -130,6 +130,9 @@ def aes_reward(completions, **kwargs):
                 print(f"Error dumping wav: {e}")
     reward_step += 1
     return rewards
+
+
+
 #%%
 class DummyTokenizer():
     def __init__(self,tokenizer):
@@ -168,6 +171,28 @@ class DummyTokenizer():
         #         "attention_mask":torch.tensor([[1] for sample in range(n_samples)]),
         #     }
 dummy_tokenizer = DummyTokenizer(tokenizer)
+
+#%%
+# look at effect of sampling params on rewards
+# get a batch of 64 samples fast to test the model
+# get one batch
+# tst_batch = next(iter(ds.batch(64)))
+
+# # generate with model
+# outputs = model.generate(
+#     input_ids=torch.tensor(batch["prompt"]),
+#     max_length=250,
+#     # num_return_sequences=64,
+#     temperature=1.0,
+#     output_scores=True,
+#     output_hidden_states=True,
+#     output_attentions=True,
+# )
+# rewards = aes_reward(outputs, prompts=batch["prompt"])
+
+#%%
+# get rewards
+
 # %%
 os.environ["WANDB_PROJECT"] = "music-grpo"  # name your W&B project
 os.environ["WANDB_LOG_MODEL"] = "false"

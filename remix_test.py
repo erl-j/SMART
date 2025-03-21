@@ -6,6 +6,7 @@ import torch
 import numpy as np
 import pygad
 
+
 #%%
 # set cuda visbble devices
 import os
@@ -37,6 +38,20 @@ def get_aes_scores(records):
     return records
 
 audio, sample_rate = sf.read("data/test.wav")
+
+audio = audio.T
+audio_full = audio
+
+SECONDS = 10
+
+# get crop from middle
+start = int((audio.shape[1] - SECONDS * sample_rate) / 2)
+end = start + SECONDS * sample_rate
+audio = audio[:, start:end]
+
+# play audio
+import IPython.display as ipd
+ipd.Audio(audio, rate=sample_rate)
 
 #%%
 
@@ -119,26 +134,25 @@ chain = MasteringChain(sample_rate)
 def fitness_function(ga_instance, solution, solution_idx):
     chain.set_parameters(solution)
     processed_audio = chain.process(audio)
-    record = [{"audio": processed_audio.T}]
+    record = [{"audio": processed_audio}]
     record = get_aes_scores(record)
-    return record[0]["aes_scores"]["PQ"]
+    print(f"Solution {solution_idx} - scores: {record[0]['aes_scores']}")
+    return sum(value for value in record[0]["aes_scores"].values())
 
+gene_space = chain.get_parameter_ranges()
+num_genes = len(chain.get_parameter_ranges())
 
 num_generations = 10
-num_parents_mating = 4
-sol_per_pop = 50
-num_genes = len(chain.get_parameter_ranges())
-# Create initial population
-
-# Create bounds for the parameters
-gene_space = chain.get_parameter_ranges()
+num_parents_mating = 8  # Increased from 4 for better diversity
+sol_per_pop = 100  # Larger population to compensate for fewer generations
+parent_selection_type = "tournament"  # More effective selection method
+K_tournament = 3  # Small tournament size for quick convergence
 
 initial_population = np.random.uniform(
     low=[x[0] for x in gene_space],
     high=[x[1] for x in gene_space],
     size=(sol_per_pop, num_genes)
 )
-
 
 # Initialize the PyGAD instance
 ga_instance = pygad.GA(
@@ -150,12 +164,14 @@ ga_instance = pygad.GA(
     fitness_func=fitness_function,
     gene_space=gene_space,
     gene_type=float,
-    mutation_type="adaptive",
-    mutation_probability=[0.2, 0.1],
-    crossover_type="single_point",
-    crossover_probability=0.8,
-    keep_parents=2,
-    save_best_solutions=True
+    parent_selection_type=parent_selection_type,
+    K_tournament=K_tournament,
+    mutation_type="random",  # Simpler mutation type
+    mutation_percent_genes=15,  # Mutate 15% of genes
+    crossover_type="uniform",  # Better mixing of genes
+    crossover_probability=0.9,
+    keep_parents=4,  # Keep more elite solutions
+    save_best_solutions=True,
 )
 
 # Run the genetic algorithm optimization
@@ -167,18 +183,20 @@ solution, solution_fitness, solution_idx = ga_instance.best_solution()
 print(f"Best solution parameters: {solution}")
 print(f"Best solution fitness (PQ score): {solution_fitness}")
 
+#%%
 # Optional: Plot the fitness history
 ga_instance.plot_fitness()
 
+#%%
 # Apply the best parameters to the master chain and process the audio
 chain.set_parameters(solution)
-optimized_audio = chain.process(audio)
+optimized_audio = chain.process(audio_full)
 
 
 # %%
 # play optimized audio
 import IPython.display as ipd
-ipd.Audio(optimized_audio.T, rate=sample_rate)
+ipd.Audio(optimized_audio, rate=sample_rate)
 
 
 # %%
