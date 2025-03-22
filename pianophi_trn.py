@@ -24,6 +24,7 @@ sample_rate = 48_000
 MAX_AUDIO_DURATION = 10
 #%%
 sf_path = BuiltInSF3.MuseScoreGeneral().path(download=True)
+sf_path = "./soundfonts/SGM-V2.01-XG-2.04.sf2"
 synth = Synthesizer(
     sf_path = sf_path, # the path to the soundfont
     sample_rate = sample_rate, # the sample rate of the output wave, sample_rate is the default value
@@ -31,8 +32,8 @@ synth = Synthesizer(
 #%%
 model = transformers.AutoModelForCausalLM.from_pretrained("lucacasini/metamidipianophi3", trust_remote_code=True, torch_dtype="auto")
 tokenizer = miditok.REMI.from_pretrained("lucacasini/metamidipianophi3")
-OUTPUT_DIR = "artefacts/pianophi-kl=0.2-prompted-longer-training"
-PIANO_PROGRAM = 0
+OUTPUT_DIR = "artefacts/pianophi-kl=0.1-prompted-longer-training-SGM"
+PIANO_PROGRAM = 24
 
 # write tokenizer vocab to file
 import json
@@ -173,21 +174,20 @@ os.environ["WANDB_PROJECT"] = "music-grpo"  # name your W&B project
 os.environ["WANDB_LOG_MODEL"] = "false"
 
 BATCH_SIZE=64
-N_GENERATIONS=100
 
 config = GRPOConfig(
     temperature=1.0,
     output_dir=OUTPUT_DIR,
     max_completion_length=250,
     max_prompt_length=6,
-    num_train_epochs=10_000,
+    num_train_epochs=200,
     learning_rate=1e-5,
     report_to="wandb",
     logging_steps=1,
     num_generations=BATCH_SIZE,
     per_device_train_batch_size=BATCH_SIZE,
     save_steps=5000,
-    beta=0.2
+    beta=0.1
 )
 trainer = GRPOTrainer(
     model=model,
