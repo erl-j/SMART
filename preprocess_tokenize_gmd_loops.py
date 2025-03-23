@@ -43,41 +43,60 @@ TOKENIZER_PARAMS = {
 config = miditok.TokenizerConfig(**TOKENIZER_PARAMS)
 tokenizer = miditok.REMI(config)
 
+# save config
+config.save_to_json("data/tokenizer_config.json")
+
 #%% 
 from joblib import Parallel, delayed
 from tqdm import tqdm
 import os
 import datasets
-
+from datasets import Dataset
 
 #%%
-for split in ["tst","val","trn"]:
 
-    src_path = f"../slm/data/gmd_loops_2/{split}_midi_records_loops.pt"  
+    
+def music2tokens(example, idx):
+    """Process a single MIDI example"""
+    processed = {}
+    processed['token_ids'] = tokenizer(example['midi']).ids
+    processed["loop_idx"] = idx
+    processed["midi_bytes"] = example["midi"].dumps_midi()
+    # Remove memory-intensive fields
+    processed["midi"] = None
+    processed["music"] = None
+    return processed
+    
+   
+# Main execution
+# Define paths
+output_dir = "data/gmd_loops_2_tokenized_2"
+os.makedirs(output_dir, exist_ok=True)
 
-    # load the dataset
-    records = torch.load(src_path, weights_only=False)
-  
-    #%%
-    def music2tokens(example, idx):
-        example['tokens'] = tokenizer(example['midi']).tokens
-        example["loop_idx"] = idx
-        example["midi_bytes"] = example["midi"].dumps_midi()
-        example["midi"] = None
-        example["music"] = None
-        return example
+# Import your tokenizer here
+# from your_tokenizer_module import tokenizer
+import pandas as pd
 
-    # Parallel processing with joblib
-    tokenized_dataset = Parallel(n_jobs=32)(
+# Process each split
+for split in ["tst", "val", "trn"]:
+    src_path = f"../slm/data/gmd_loops_2/{split}_midi_records_loops.pt"
+    dataset = torch.load(src_path, weights_only=False)
+
+    # Process each example
+    dataset = Parallel(n_jobs=16)(
         delayed(music2tokens)(subrecord, idx)
-        for record in tqdm(records)
-        for idx,subrecord in enumerate(record)
+        for record in tqdm(dataset, desc=f"Processing {split}")
+        for idx, subrecord in enumerate(record)
     )
-    os.makedirs("data/gmd_loops_2_tokenized", exist_ok=True)
-    # save to pytorch tensor
-    outpath = f"data/gmd_loops_2_tokenized/{split}.pt"
-    torch.save(tokenized_dataset, outpath)
+    dataset = pd.DataFrame(dataset)
+    # 
+    # save the dataset
+    dataset = Dataset.from_pandas(dataset)
+    dataset.save_to_disk(f"{output_dir}/{split}")
 
 
+print("All splits processed and saved successfully!")
 #%%
+
+
 # %%
