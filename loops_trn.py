@@ -18,7 +18,7 @@ import random
 # %%
 
     
-MAX_TOKENS = 512
+MAX_TOKENS = 1024
 
 tokenizer_config = miditok.TokenizerConfig.load_from_json("data/gmd_loops_2_tokenized/tokenizer_config.json")
 tokenizer = miditok.REMI(tokenizer_config)
@@ -40,7 +40,7 @@ model_config = Phi3Config(
     pad_token_id=tokenizer.vocab["PAD_None"],
     num_hidden_layers=6,
     hidden_size=512,
-    intermediate_size=1024,
+    intermediate_size=2048,
     num_attention_heads=8,
     )
 model = Phi3ForCausalLM(model_config)
@@ -137,7 +137,7 @@ with wandb.init(
         # max_steps=,
         num_train_epochs=10,
         eval_strategy="steps",
-        eval_steps=20,
+        eval_steps=50000,
         # eval_on_start=True,
         per_device_train_batch_size=32,
         per_device_eval_batch_size=32,
@@ -150,7 +150,7 @@ with wandb.init(
         lr_scheduler_type="cosine_with_min_lr",
         lr_scheduler_kwargs={"min_lr": 5e-6},
         remove_unused_columns=False,
-        save_steps=20,
+        save_steps=25000,
         logging_steps=10,
     )
 
@@ -162,56 +162,56 @@ with wandb.init(
         data_collator=collator,  
     )
 
-    # move it up
-    class WandbPredictionProgressCallback(WandbCallback):
-        def __init__(self, trainer, tokenizer):
-            super().__init__()
-            self.trainer = trainer
-            self.tokenizer = tokenizer
-            self.inf_tokens = [tokenizer[t] for t in tokenizer.vocab if t.startswith("INF")]
+    # # move it up
+    # class WandbPredictionProgressCallback(WandbCallback):
+    #     def __init__(self, trainer, tokenizer):
+    #         super().__init__()
+    #         self.trainer = trainer
+    #         self.tokenizer = tokenizer
+    #         self.inf_tokens = [tokenizer[t] for t in tokenizer.vocab if t.startswith("INF")]
 
-        """
-        take the outputs, try to reoder the sequence and return midi player for wandb
-        puts parts in separate tracks if possible
-        """
+    #     """
+    #     take the outputs, try to reoder the sequence and return midi player for wandb
+    #     puts parts in separate tracks if possible
+    #     """
 
-        def display_midi(self, out, title="generation sample"):
-            out.dump_midi("./artefacts/tmp.mid")
-            return MIDIPlayer(
-                "./artefacts/tmp.mid",
-                height=400,
-                styler=cifka_advanced,
-                title=title,
-            )
+    #     def display_midi(self, out, title="generation sample"):
+    #         out.dump_midi("./artefacts/tmp.mid")
+    #         return MIDIPlayer(
+    #             "./artefacts/tmp.mid",
+    #             height=400,
+    #             styler=cifka_advanced,
+    #             title=title,
+    #         )
 
-        # render unconditional generation example
-        def render_prediction(self):
-            out = self.trainer.model.generate(
-                    torch.LongTensor([[self.tokenizer.vocab["BOS_None"]]]).to(self.trainer.model.device),
-                    max_new_tokens=1024 + 16,
-                    do_sample=True,
-                    use_cache=True,
-                    # top_p=0.95,
-                )
-            print("gen_sample", out)
-            out = self.tokenizer(out.cpu().tolist())
-            mp = self.display_midi(
-                out, title=f"Generation sample epoch {round(self.trainer.state.epoch)}"
-            )
-            wandb.log({"gen_sample": wandb.Html(mp.html)})
+    #     # render unconditional generation example
+    #     def render_prediction(self):
+    #         out = self.trainer.model.generate(
+    #                 torch.LongTensor([[self.tokenizer.vocab["BOS_None"]]]).to(self.trainer.model.device),
+    #                 max_new_tokens=1024 + 16,
+    #                 do_sample=True,
+    #                 use_cache=True,
+    #                 # top_p=0.95,
+    #             )
+    #         print("gen_sample", out)
+    #         out = self.tokenizer(out.cpu().tolist())
+    #         mp = self.display_midi(
+    #             out, title=f"Generation sample epoch {round(self.trainer.state.epoch)}"
+    #         )
+    #         wandb.log({"gen_sample": wandb.Html(mp.html)})
 
-        def on_evaluate(self, args, state, control, **kwargs):
-            super().on_evaluate(args, state, control, **kwargs)
-            # print("after eval callback")
-            assert not self.trainer.model.training
-            self.render_prediction()
+    #     def on_evaluate(self, args, state, control, **kwargs):
+    #         super().on_evaluate(args, state, control, **kwargs)
+    #         # print("after eval callback")
+    #         assert not self.trainer.model.training
+    #         self.render_prediction()
 
 
-    progress_callback = WandbPredictionProgressCallback(
-            trainer=trainer,
-            tokenizer=tokenizer,
-        )
-    trainer.add_callback(progress_callback)
+    # progress_callback = WandbPredictionProgressCallback(
+    #         trainer=trainer,
+    #         tokenizer=tokenizer,
+    #     )
+    # trainer.add_callback(progress_callback)
 
     trainer.train()
 
