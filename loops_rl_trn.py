@@ -12,6 +12,10 @@ from datasets import load_dataset
 from transformers import ClapModel, ClapProcessor
 import os
 import random
+from util import crop_sm, sm_beats_per_second
+import tempfile
+from tqdm import tqdm
+
 
 #%%
 # set CUDA DEVICE to 1
@@ -38,7 +42,7 @@ BETA = 0.04
 BASE_MODEL_PATH = "outputs/mt/treasured-cosmos-19/checkpoint-75000"
 TOKENIZER_CONFIG_PATH = "data/tokenizer_config.json"
 
-OUTPUT_DIR = "artefacts/loops-fluidr3"
+OUTPUT_DIR = "artefacts/loops-fluidr3-fixed-rendering"
 
 #%%
 # audio rendering settings
@@ -54,13 +58,10 @@ SF_PATH= {"musescore": BuiltInSF3.MuseScoreGeneral().path(download=True),
             "touhou" : "./soundfonts/Touhou.sf2",
             "arachno": "./soundfonts/Arachno SoundFont - Version 1.0.sf2",
             "fluidr3": "./soundfonts/FluidR3 GM.sf2",
-
             }[SOUNDFONT]
+from render import MidiRenderer
 
-synth = Synthesizer(
-    sf_path = SF_PATH, # the path to the soundfont
-    sample_rate = SAMPLE_RATE, # the sample rate of the output wave, sample_rate is the default value
-)
+synth = MidiRenderer(SF_PATH, SAMPLE_RATE)
 #%%
 
 model = transformers.AutoModelForCausalLM.from_pretrained(BASE_MODEL_PATH, trust_remote_code=True, torch_dtype="auto")
@@ -150,6 +151,10 @@ def aes_reward(completions, return_records=False, **kwargs):
     
     # Process sequences into structured music objects
     sms = [tokenizer(full_seqs[i].cpu().numpy()) for i in range(full_seqs.shape[0])]
+
+    n_beats=16
+
+    sms = [crop_sm(sm, n_beats) for sm in sms]
     
     # Create records for each sequence
     records = [
@@ -163,17 +168,23 @@ def aes_reward(completions, return_records=False, **kwargs):
         } 
         for i in range(full_seqs.shape[0])
     ]
+
+    print(f"Processing {len(records)} records")
     
     # Render audio for each record
-    for record in records:
+    for record in tqdm(records):
         try:
-            record["audio"] = synth.render(record["sm"])
+            with tempfile.NamedTemporaryFile(suffix=".mid") as f:
+                record["sm"].dump_midi(f.name)
+                record["audio"] = synth.render(f.name, n_beats  * sm_beats_per_second(record["sm"]))
             if record["audio"].shape[1] > MAX_AUDIO_DURATION * SAMPLE_RATE:
                 record["audio"] = record["audio"][:, :MAX_AUDIO_DURATION * SAMPLE_RATE]
         except Exception as e:
             print(f"Error rendering audio: {e}")
             record["audio"] = None
-    
+
+    print("Audio rendered")
+    print(f"Calculating aesthetic scores for {len(records)} records")
     # Get aesthetic scores for each record
     records = get_aes_scores(records)
 

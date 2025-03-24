@@ -33,6 +33,35 @@ instrument_class_to_selected_program_nr = {
     "Sound Effects": 112,
 }
 
+def sm_beats_per_second(sm):
+    # get how many seconds are in a beat
+    return 60 / sm.tempos[-1].qpm
+
+def crop_sm(sm, n_beats):
+    """
+    Crop a symbolic music object to a specific number of beats.
+    
+    Parameters:
+    -----------
+    sm : object
+        Symbolic music object with tpq attribute and clip method
+    n_beats : int
+        Number of beats to keep
+        
+    Returns:
+    --------
+    object
+        Cropped symbolic music object
+    """
+    # Create a copy to avoid modifying the original
+    sm_copy = sm.copy()
+    tpq = sm_copy.tpq
+    
+    # Clip to specified number of beats
+    sm_copy = sm_copy.clip(0, n_beats * tpq, clip_end=True)
+    
+    return sm_copy
+
 
 def detail_plot(sm):
     pr_tpq = 12
@@ -440,21 +469,6 @@ def get_scale(scale, range):
                 midi_notes.append(new_note)
         octave += 1
 
-
-def crop_sm(sm, n_bars, beats_per_bar):
-    sm = sm.copy()
-    end_tick = n_bars * sm.ticks_per_quarter * beats_per_bar
-    for track_idx in range(len(sm.tracks)):
-        track = sm.tracks[track_idx]
-        new_notes = []
-        for note in track.notes:
-            if note.start < end_tick:
-                # crop duration
-                if note.start + note.duration > end_tick:
-                    note.duration = end_tick - note.start
-                new_notes.append(note)
-        sm.tracks[track_idx].notes = new_notes
-    return sm
 
 def loop_sm(sm, loop_bars, n_loops):
     '''
