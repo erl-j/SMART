@@ -39,6 +39,8 @@ class MidiRenderer:
             Audio as a numpy array with shape (2, samples) for stereo output
         """
         # Load the MIDI file
+        self.synth.notes_off()
+
         self.seq = tinysoundfont.Sequencer(self.synth)
 
         self.seq.midi_load(midi_path)

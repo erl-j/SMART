@@ -15,6 +15,7 @@ import random
 from util import crop_sm, sm_beats_per_second
 import tempfile
 from tqdm import tqdm
+import numpy as np
 
 
 #%%
@@ -39,10 +40,10 @@ NUM_TRAIN_EPOCHS = 200
 LEARNING_RATE = 1e-5
 BETA = 0.04
 
-BASE_MODEL_PATH = "outputs/mt/treasured-cosmos-19/checkpoint-75000"
+BASE_MODEL_PATH = "/workspace/aestune/outputs/mt/treasured-cosmos-19/checkpoint-100000"
 TOKENIZER_CONFIG_PATH = "data/tokenizer_config.json"
 
-OUTPUT_DIR = "artefacts/loops-fluidr3-fixed-rendering"
+OUTPUT_DIR = "artefacts/loops-fluidr3-fixed-rendering-normalised-newcheckpoint-notesoff-0.9-random-program"
 
 #%%
 # audio rendering settings
@@ -75,6 +76,7 @@ timesignature_tokens = [value for key, value in tokenizer.vocab.items() if key.s
 tempo_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Tempo_")]
 pitch_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Pitch_")]
 velocity_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Velocity_")]
+program_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Program_")]
 
 print(f"Found {len(timesignature_tokens)} time signature tokens")
 print(f"Found {len(tempo_tokens)} tempo tokens")
@@ -84,7 +86,7 @@ print(f"Found {len(velocity_tokens)} velocity tokens")
 
 def gen():
     for i in range(100_000):
-        yield {"prompt": [tokenizer.vocab["BOS_None"]]
+        yield {"prompt": [tokenizer.vocab["BOS_None"], random.choice(program_tokens)]
             }
 ds = Dataset.from_generator(gen)
 prompt_length = len(ds[0]["prompt"])
@@ -177,6 +179,8 @@ def aes_reward(completions, return_records=False, **kwargs):
             with tempfile.NamedTemporaryFile(suffix=".mid") as f:
                 record["sm"].dump_midi(f.name)
                 record["audio"] = synth.render(f.name, n_beats  * sm_beats_per_second(record["sm"]))
+                # peak normalization
+                record["audio"] = record["audio"] / np.max(np.abs(record["audio"])+1e-6)
             if record["audio"].shape[1] > MAX_AUDIO_DURATION * SAMPLE_RATE:
                 record["audio"] = record["audio"][:, :MAX_AUDIO_DURATION * SAMPLE_RATE]
         except Exception as e:
