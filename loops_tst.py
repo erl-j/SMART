@@ -5,7 +5,8 @@ from util import preview_sm
 from symusic import BuiltInSF3, Synthesizer
 import IPython.display as ipd
 
-checkpoint = "./outputs/mt/treasured-cosmos-19/checkpoint-100000"
+checkpoint = "outputs/mt/treasured-cosmos-19/checkpoint-225000"
+# checkpoint = "outputs/mt/ruby-microwave-20/checkpoint-425000"
 
 tokenizer_config = miditok.TokenizerConfig.load_from_json("./data/tokenizer_config.json")
 tokenizer = miditok.REMI(tokenizer_config)
@@ -21,9 +22,10 @@ import torch
 
 prompt = ["BOS_None", "Program_-1"]
 input_ids = torch.tensor([tokenizer.vocab[token] for token in prompt])[None,...]
+
 # generate a sequence
 out = model.generate(
-    input_ids= input_ids,
+    # input_ids= input_ids,
     max_length=2048,
     do_sample=True,
     pad_token_id=tokenizer.vocab["PAD_None"],
@@ -41,7 +43,6 @@ out = model.generate(
 tokens = tokenizer._ids_to_tokens(out[0].tolist())
 print(tokens)
 sm = tokenizer.decode(out[0])
-
 
 preview_sm(sm)
 # %%

@@ -14,10 +14,12 @@ import numpy as np
 import torch
 import wandb
 import random
+from loops_util import prepare_input
 
 # %%
-
     
+
+MAX_PROMPT_LENGTH = 16    
 MAX_TOKENS = 1024
 
 tokenizer_config = miditok.TokenizerConfig.load_from_json("data/gmd_loops_2_tokenized/tokenizer_config.json")
@@ -26,10 +28,12 @@ tokenizer = miditok.REMI(tokenizer_config)
 
 from datasets import Dataset
 trn_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/trn")
-val_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/val")
-
 trn_ds.filter(lambda x: len(x["token_ids"]) <= MAX_TOKENS, num_proc=16)
+
+val_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/val")
 val_ds.filter(lambda x: len(x["token_ids"]) <= MAX_TOKENS, num_proc=16)
+
+
 
 # %%
 
@@ -52,6 +56,10 @@ model = Phi3ForCausalLM(model_config)
 print(f"Model has {model.num_parameters() / 1e6} million parameters")
 # %%
 
+
+
+
+
 # %%
 
 class MyDataCollator:
@@ -71,23 +79,14 @@ class MyDataCollator:
 
         # select a random crop of tokens
         for b in batch:
-            tokens = self.tokenizer._ids_to_tokens(b["token_ids"])
-            # encode the sequence + append BOS and EOS
-
-            # random crop to max_seq_len
-            # seq = self._random_crop(seq)
-            # get all program tokens in seq
-            program_tokens = [t for t in tokens if t.startswith("Program_")]
-            # now shuffle not in place!
-            program_tokens = np.unique(np.random.permutation(program_tokens)).tolist()
-
-            seq = program_tokens + tokens
-            # add BOS and EOS tokens
-            seq = ["BOS_None"] + seq + ["EOS_None"]
-            # add to input_ids
-            ids = self.tokenizer._tokens_to_ids(seq)
-            input_ids.append(torch.LongTensor(ids))
-
+            # tokens = self.tokenizer._ids_to_tokens(b["token_ids"])
+            # program_tokens = [t for t in tokens if t.startswith("Program_")]
+            # program_tokens = np.unique(np.random.permutation(program_tokens)).tolist()
+            # seq = program_tokens + tokens
+            # seq = ["BOS_None"] + seq + ["EOS_None"]
+            # ids = self.tokenizer._tokens_to_ids(seq)
+            # input_ids.append(torch.LongTensor(ids))
+            input_ids.append(torch.LongTensor(prepare_input(b["token_ids"], self.tokenizer)))
         # crop
         input_ids = [self._random_crop(seq) for seq in input_ids]
             
@@ -122,7 +121,7 @@ class MyDataCollator:
         ).long()
     
 
-collator = MyDataCollator(tokenizer, MAX_TOKENS+16)
+collator = MyDataCollator(tokenizer, MAX_TOKENS+MAX_PROMPT_LENGTH)
 
 
 with wandb.init(
