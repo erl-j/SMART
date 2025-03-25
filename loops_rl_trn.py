@@ -25,39 +25,43 @@ torch.manual_seed(SEED)
 np.random.seed(SEED)
 
 BATCH_SIZE=32
-NUM_GENERATIONS=8
+USE_BF16 = True
+NUM_GENERATIONS=32
 REWARD_WEIGHTS = {
-    "CE": 1.0,
-    "CU": 0.0,
-    "PC": 0.0,
-    "PQ": 0.0,
+    "CE": 0.25,
+    "CU": 0.25,
+    "PC": 0.25,
+    "PQ": 0.25,
     "programs_iou": 1.0,
 }
-TEMPERATURE = 0.9
+TEMPERATURE = 1.0
 MAX_PROMPT_LENGTH = 32
 
-MAX_COMPLETION_LENGTH = 2048
-NUM_TRAIN_STEPS = 200
+NUM_TRAIN_STEPS = 1000
 LEARNING_RATE = 1e-5
-BETA = 0.04
-PROMPT_SOURCE = "dataset" # "dataset" "no_prompt
+BETA = 0.01
+PROMPT_SOURCE = "piano" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 
+BASE_MODEL_PATH = "/workspace/aestune/outputs/mt/treasured-cosmos-19/"
+MAX_COMPLETION_LENGTH = 2048
+
+# BASE_MODEL_PATH = "/workspace/aestune/outputs/mt/ruby-microwave-20/"
+# MAX_COMPLETION_LENGTH = 1024
 
 N_PROMPTS = (NUM_TRAIN_STEPS * BATCH_SIZE // NUM_GENERATIONS) * 10
 
-BASE_MODEL_PATH = "/workspace/aestune/outputs/mt/treasured-cosmos-19/"
 # get latest checkpoint
 BASE_MODEL_PATH = sorted(glob.glob(f"{BASE_MODEL_PATH}/checkpoint-*"))[-1]
 print(f"Using checkpoint {BASE_MODEL_PATH}")
 TOKENIZER_CONFIG_PATH = "data/tokenizer_config.json"
 
-OUTPUT_DIR = "artefacts/loops-fluir3-2-iou-logstep"
+OUTPUT_DIR = "artefacts/loops-fluir3-2-iou-logstep-1e-4-beta=0.01-avg-aes-and-iou-32samples-piano-random-tempo"
 
 #%%
 # audio rendering settings
 SAMPLE_RATE = 48_000
 MAX_AUDIO_DURATION = 32
-AUDIO_SAVE_INTERVAL = 10
+AUDIO_SAVE_INTERVAL = 50
 SOUNDFONT = "fluidr3" 
 
 SF_PATH= {"musescore": BuiltInSF3.MuseScoreGeneral().path(download=True), 
@@ -82,15 +86,15 @@ tokenizer_config = miditok.TokenizerConfig.load_from_json(TOKENIZER_CONFIG_PATH)
 tokenizer = miditok.REMI(tokenizer_config)
 
 #%%
+bar_token = tokenizer.vocab["Bar_None"]
+position_zero_token = tokenizer.vocab["Position_0"]
+timesignature_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("TimeSig_")]
+tempo_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Tempo_")]
+pitch_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Pitch_")]
+velocity_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Velocity_")]
+program_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Program_")]
 
 if PROMPT_SOURCE == "no prompt":
-    bar_token = tokenizer.vocab["Bar_None"]
-    position_zero_token = tokenizer.vocab["Position_0"]
-    timesignature_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("TimeSig_")]
-    tempo_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Tempo_")]
-    pitch_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Pitch_")]
-    velocity_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Velocity_")]
-    program_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Program_")]
 
     print(f"Found {len(timesignature_tokens)} time signature tokens")
     print(f"Found {len(tempo_tokens)} tempo tokens")
@@ -109,6 +113,12 @@ elif PROMPT_SOURCE == "procedural":
         for i in range(N_PROMPTS):
             yield {"prompt": [tokenizer.vocab["BOS_None"], tokenizer.vocab["Program_-1"]]}
     ds = Dataset.from_generator(gen)
+elif PROMPT_SOURCE == "piano":
+    def gen():
+        for i in range(N_PROMPTS):
+            yield {"prompt": [tokenizer.vocab["BOS_None"], tokenizer.vocab["Program_0"], tokenizer.vocab["Bar_None"], tokenizer.vocab["TimeSig_4/4"], tokenizer.vocab["Position_0"], np.random.choice(tempo_tokens)]}
+    ds = Dataset.from_generator(gen)
+
 
 elif PROMPT_SOURCE == "dataset":
     print("Loading dataset")
@@ -351,9 +361,10 @@ config = GRPOConfig(
     per_device_train_batch_size=BATCH_SIZE,
     save_steps=NUM_TRAIN_STEPS,
     beta=BETA,
-    bf16=True,
+    bf16=USE_BF16,
+    # set schedule to fixed
+    lr_scheduler_type="constant",
 )
-
 trainer = GRPOTrainer(
     model=model,
     reward_funcs=aes_reward,

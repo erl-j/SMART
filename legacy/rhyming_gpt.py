@@ -19,19 +19,6 @@ def reward_(completion):
     
     return max_alliteration
 
-# def reward_(completion, **kwargs):
-#     # get number of words in completion
-#     words = completion.split()
-#     n_words = len(words)
-#     # if there are no words, return 0
-#     if n_words == 0:
-#         return 0
-#     # else get average length of words
-#     avg_word_length = sum([len(word) for word in words]) / n_words
-#     # return average word length
-#     print(completion)
-#     return avg_word_length
-
 def reward_fn(completions, **kwargs):
     rewards = [reward_(completion) for completion in completions]
     print(f"Rewards: {rewards}")
