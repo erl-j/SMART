@@ -32,15 +32,15 @@ REWARD_WEIGHTS = {
     "CU": 0.25,
     "PC": 0.25,
     "PQ": 0.25,
-    "programs_iou": 1.0,
+    "programs_iou": 0.25,
 }
 TEMPERATURE = 1.0
 MAX_PROMPT_LENGTH = 32
 
 NUM_TRAIN_STEPS = 1000
 LEARNING_RATE = 1e-5
-BETA = 0.01
-PROMPT_SOURCE = "piano" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
+BETA = 0.04
+PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 
 BASE_MODEL_PATH = "/workspace/aestune/outputs/mt/treasured-cosmos-19/"
 MAX_COMPLETION_LENGTH = 2048
@@ -55,7 +55,7 @@ BASE_MODEL_PATH = sorted(glob.glob(f"{BASE_MODEL_PATH}/checkpoint-*"))[-1]
 print(f"Using checkpoint {BASE_MODEL_PATH}")
 TOKENIZER_CONFIG_PATH = "data/tokenizer_config.json"
 
-OUTPUT_DIR = "artefacts/loops-fluir3-2-iou-logstep-1e-4-beta=0.01-avg-aes-and-iou-32samples-piano-random-tempo"
+OUTPUT_DIR = "artefacts/loops-fluir3-2-iou-logstep-1e-5-beta=0.04-avg-aes-and-iou-32samples-mi-iou-0.25"
 
 #%%
 # audio rendering settings
@@ -363,7 +363,7 @@ config = GRPOConfig(
     beta=BETA,
     bf16=USE_BF16,
     # set schedule to fixed
-    lr_scheduler_type="constant",
+    # lr_scheduler_type
 )
 trainer = GRPOTrainer(
     model=model,
