@@ -51,7 +51,7 @@ BASE_MODEL_PATH = sorted(glob.glob(f"{BASE_MODEL_PATH}/checkpoint-*"))[-1]
 print(f"Using checkpoint {BASE_MODEL_PATH}")
 TOKENIZER_CONFIG_PATH = "data/tokenizer_config.json"
 
-OUTPUT_DIR = "artefacts/loops-fluir3-2-iou"
+OUTPUT_DIR = "artefacts/loops-fluir3-2-iou-logstep"
 
 #%%
 # audio rendering settings
@@ -203,10 +203,6 @@ def aes_reward(completions, return_records=False, **kwargs):
     
     # Combine prompts and completions
     full_seqs = torch.cat([prompts, completions.cpu()], dim=1)
-
-
-
-
     
     # Process sequences into structured music objects
     sms = [tokenizer(full_seqs[i].cpu().numpy()) for i in range(full_seqs.shape[0])]
@@ -217,7 +213,7 @@ def aes_reward(completions, return_records=False, **kwargs):
     
     # Create records for each sequence
     records = [
-        {
+        {   
             "completion": completions[i].cpu(),
             "sm": sms[i],
             "prompt": prompts[i],
@@ -227,6 +223,7 @@ def aes_reward(completions, return_records=False, **kwargs):
             "prompt_and_completion_tokens": tokenizer._ids_to_tokens(full_seqs[i].cpu().numpy()),
             "idx": i,
             "normalized_rewards": {},
+            "reward_step": global_reward_step,
         } 
         for i in range(full_seqs.shape[0])
     ]
