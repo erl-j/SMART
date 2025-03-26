@@ -14,7 +14,8 @@ from tqdm import tqdm
 # run_path  = "artefacts/loops-fluir3-2-iou-logstep-1e-6-beta=0.04-avg-aes-and-iou-8samples-mi-iou-0.25-32k-ce-pq"
 # run_path  = "artefacts/loops-touhou-2-iou-logstep-1e-6-beta=0.04-avg-aes-and-iou-8samples-mi-iou-0.25-32k-ce-pq"
 # run_path = "artefacts/drgpo-loops-touhou-2-iou-logstep-1e-4-beta=0.04-4samples-mi-iou-0.25-32k-ce-pq-16its"
-run_path = "artefacts/piano-test-4"
+# run_path = "artefacts/piano-test-6"
+run_path = "artefacts/loops-1e-4"
 # load all logs
 
 logs = glob.glob(run_path + "/rl_logs/**/*.parquet", recursive=True)
@@ -35,8 +36,13 @@ midi_paths = glob.glob(run_path + "/midi/**/*.mid", recursive=True)
 
 
 
+
 # create records with 
 midi = [{"midi_path": m, "reward_step": int(m.split("/")[-2].split("_")[0]), "idx" : int(m.split("_")[-1].replace(".mid","")) } for m in tqdm(midi_paths)]
+
+# if normalized_rewards_programs_iou is missing, add it as 0
+if "normalized_rewards_programs_iou" not in logs.columns:
+    logs["normalized_rewards_programs_iou"] = 0
 
 
 #%%
@@ -127,12 +133,69 @@ plt.scatter(X, y, alpha=0.1)
 plt.plot(X, reg.predict(X), c="red")
 plt.show()
 
+#%%
+
+# make a ridge plot of the rewards 
+import seaborn as sns
+import matplotlib.pyplot as plt
+sns.kdeplot(data=logs, x="reward", hue="reward_step", fill=True, alpha=0.5)
+plt.show()
 
 
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import cm
+from mpl_toolkits.mplot3d import Axes3D
+import pandas as pd
 
+# Assuming logs is your DataFrame with reward and reward_step columns
+# First, ensure reward_step is treated as numeric if it isn't already
+logs['reward_step'] = pd.to_numeric(logs['reward_step'])
 
+# Create a grid for the 3D plot
+unique_steps = np.sort(logs['reward_step'].unique())
+reward_range = np.linspace(logs['reward'].min(), logs['reward'].max(), 100)
 
+# Create meshgrid for 3D plotting
+X, Y = np.meshgrid(unique_steps, reward_range)
 
+# Create empty array to hold histogram-based density values
+density_matrix = np.zeros((len(reward_range), len(unique_steps)))
 
+# Fill the density matrix using histograms instead of KDE
+for i, step in enumerate(unique_steps):
+    step_data = logs[logs['reward_step'] == step]['reward']
+    if len(step_data) > 0:
+        # Create histogram for this step
+        hist, bin_edges = np.histogram(step_data, bins=50, 
+                                      range=(logs['reward'].min(), logs['reward'].max()),
+                                      density=True)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        
+        # Interpolate histogram values to our common grid
+        density = np.interp(reward_range, bin_centers, hist, left=0, right=0)
+        density_matrix[:, i] = density
+
+# Create the 3D plot
+fig = plt.figure(figsize=(12, 8))
+ax = fig.add_subplot(111, projection='3d')
+
+# Plot the contour
+contour = ax.contour3D(X, Y, density_matrix, 20, cmap=cm.viridis)
+
+# Add a color bar
+fig.colorbar(contour, ax=ax, shrink=0.5, aspect=5)
+
+# Set labels
+ax.set_xlabel('Reward Step (Time)')
+ax.set_ylabel('Reward Value')
+ax.set_zlabel('Density')
+ax.set_title('3D Contour Plot of Reward Distribution Evolution')
+
+# Adjust viewing angle for better visualization
+ax.view_init(30, 45)
+
+plt.tight_layout()
+plt.show()
 
 # %%

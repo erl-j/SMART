@@ -35,6 +35,8 @@ class TinySoundfontRenderer:
         # Initialize the synthesizer
         self.sample_rate = sample_rate
         self.synth = tinysoundfont.Synth(samplerate=self.sample_rate)
+        # Load the soundfont
+        sfid = self.synth.sfload(soundfont_path)
         
         
         # Create a sequencer

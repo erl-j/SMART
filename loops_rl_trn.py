@@ -28,10 +28,10 @@ torch.manual_seed(SEED)
 np.random.seed(SEED)
 random.seed(SEED)
 
-BATCH_SIZE=64
+BATCH_SIZE=32
 GRADIENT_ACCUMULATION_STEPS = 1
 USE_BF16 = True
-NUM_GENERATIONS=64
+NUM_GENERATIONS=8
 REWARD_WEIGHTS = {
     "CE": 1.0,
     "CU": 0.0,
@@ -39,17 +39,18 @@ REWARD_WEIGHTS = {
     "PQ": 0.0,
     "programs_iou": 0.0,
 }
-TEMPERATURE = 1.0
+TEMPERATURE = 0.8
 NUM_ITERATIONS = 1
-SCALE_REWARDS = False
+SCALE_REWARDS = True
 
 NUM_TRAIN_STEPS = 1000
-LEARNING_RATE = 1e-5
+LEARNING_RATE = 1e-4
 BETA = 0.04
 
-MODEL = "piano" #"MIL"
-PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
-
+# MODEL = "piano" #"MIL"
+# PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
+MODEL = "MIL"
+PROMPT_SOURCE = "dataset"
 AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
 
 
@@ -58,14 +59,13 @@ N_PROMPTS = (NUM_TRAIN_STEPS * BATCH_SIZE // NUM_GENERATIONS) * 10
 
 
 SAMPLE_RATE = 48_000
-MAX_AUDIO_DURATION = 32
 SOUNDFONT = "musescore" 
 
 # get latest checkpoint
-OUTPUT_DIR = "artefacts/piano-test-4"
+OUTPUT_DIR = "artefacts/loops-1e-4-beta=0.04-t=0.8"
 
 SF_PATH= {
-        "musescore": BuiltInSF3.MuseScoreGeneral().path(download=True), 
+        "musescore": str(BuiltInSF3.MuseScoreGeneral().path(download=True)), 
         "sgm": "./soundfonts/SGM-V2.01-XG-2.04.sf2",
         "monalisa":"./soundfonts/Monalisa_GM_v2_105.sf2",
         "ephesus":"./soundfonts/Ephesus_GM_Version_1_00.sf2",
@@ -80,7 +80,11 @@ SF_PATH= {
 
 match MODEL:
     case "piano":
-        MAX_COMPLETION_LENGTH = 512
+        MAX_COMPLETION_LENGTH = 256
+        MAX_BEATS = None
+        MAX_AUDIO_DURATION = 16
+
+
         synth = SymusicRenderer(SF_PATH, SAMPLE_RATE)
         BASE_MODEL_PATH = "lucacasini/metamidipianophi3"
         model = transformers.AutoModelForCausalLM.from_pretrained(BASE_MODEL_PATH, trust_remote_code=True, torch_dtype="auto")
@@ -114,6 +118,9 @@ match MODEL:
                 raise ValueError("Invalid prompt source for piano model")
     case "MIL":
         MAX_COMPLETION_LENGTH = 2048
+        MAX_BEATS = 16
+        MAX_AUDIO_DURATION = 32
+
         synth = TinySoundfontRenderer(SF_PATH, SAMPLE_RATE)
         BASE_MODEL_PATH = "/workspace/aestune/outputs/mt/treasured-cosmos-19/checkpoint-325000"
         TOKENIZER_CONFIG_PATH = "data/tokenizer_config.json"
@@ -204,6 +211,7 @@ def get_aes_scores(records):
         {
             "path": torch.tensor(record["audio"]).float(), 
             "sample_rate": SAMPLE_RATE, 
+            "duration": record["audio"].shape[1] / SAMPLE_RATE,
             "idx": i
         } 
         for i, record in enumerate(records) 
@@ -259,16 +267,14 @@ def aes_reward(completions, return_records=False, **kwargs):
     if MODEL == "MIL":
         # Process sequences into structured music objects
         sms = [tokenizer(full_seqs[i].cpu().numpy()) for i in range(full_seqs.shape[0])]
+        sms = [crop_sm(sm, MAX_BEATS) for sm in sms]
+
     if MODEL == "piano":
         sms = [tokenizer(full_seqs[i].cpu().numpy()[None, ...]) for i in range(full_seqs.shape[0])]
 
     # print sm scores
     for i, sm in enumerate(sms):
         print(f"SM {i} score: {sm}")
-
-    n_beats=16
-
-    sms = [crop_sm(sm, n_beats) for sm in sms]
     
     # Create records for each sequence
     records = [
@@ -304,7 +310,11 @@ def aes_reward(completions, return_records=False, **kwargs):
         try:
             with tempfile.NamedTemporaryFile(suffix=".mid") as f:
                 record["sm"].dump_midi(f.name)
-                record["audio"] = synth.render(f.name, n_beats  * sm_beats_per_second(record["sm"]))
+                if MODEL == "MIL":
+                    n_beats = MAX_BEATS
+                    record["audio"] = synth.render(f.name, n_beats  * sm_beats_per_second(record["sm"]))
+                if MODEL == "piano":
+                    record["audio"] = synth.render(f.name, MAX_AUDIO_DURATION)
                 # peak normalization
                 record["audio"] = record["audio"] / np.max(np.abs(record["audio"])+1e-6)
             if record["audio"].shape[1] > MAX_AUDIO_DURATION * SAMPLE_RATE:
