@@ -1,14 +1,20 @@
 #%%
 import pandas as pd
 import glob
+from tqdm import tqdm
 
 # run_path = "artefacts/loops-fluir3-2-iou-logstep-1e-4"
 # run_path = "artefacts/loops-fluir3-2-iou-logstep-1e-4-beta=0.01"
 # run_path = "artefacts/loops-fluir3-2-iou-logstep-1e-4-beta=0.01-16gens"
 # run_path = "artefacts/loops-fluir3-2-iou-logstep-1e-4-beta=0.01-avg-aes-and-iou"
 # run_path = "artefacts/loops-fluir3-2-iou-logstep-1e-4-beta=0.01-avg-aes-and-iou-32samples-piano"
-run_path = "artefacts/loops-fluir3-2-iou-logstep-1e-4-beta=0.01-avg-aes-and-iou-32samples-piano-random-tempo"
-
+# run_path = "artefacts/loops-fluir3-2-iou-logstep-1e-4-beta=0.01-avg-aes-and-iou-32samples-piano-random-tempo"
+# run_path = "artefacts/loops-fluir3-2-iou-logstep-1e-5-beta=0.04-avg-aes-and-iou-32samples-mi-iou-0.25"
+# run_path  = "artefacts/loops-fluir3-2-iou-logstep-1e-6-beta=0.04-avg-aes-and-iou-8samples-mi-iou-0.25-32k"
+# run_path  = "artefacts/loops-fluir3-2-iou-logstep-1e-6-beta=0.04-avg-aes-and-iou-8samples-mi-iou-0.25-32k-ce-pq"
+# run_path  = "artefacts/loops-touhou-2-iou-logstep-1e-6-beta=0.04-avg-aes-and-iou-8samples-mi-iou-0.25-32k-ce-pq"
+# run_path = "artefacts/drgpo-loops-touhou-2-iou-logstep-1e-4-beta=0.04-4samples-mi-iou-0.25-32k-ce-pq-16its"
+run_path = "artefacts/piano-test-4"
 # load all logs
 
 logs = glob.glob(run_path + "/rl_logs/**/*.parquet", recursive=True)
@@ -30,7 +36,7 @@ midi_paths = glob.glob(run_path + "/midi/**/*.mid", recursive=True)
 
 
 # create records with 
-midi = [{"midi_path": m, "reward_step": int(m.split("/")[-2].split("_")[0]), "idx" : int(m.split("_")[-1].replace(".mid","")) } for m in midi_paths]
+midi = [{"midi_path": m, "reward_step": int(m.split("/")[-2].split("_")[0]), "idx" : int(m.split("_")[-1].replace(".mid","")) } for m in tqdm(midi_paths)]
 
 
 #%%

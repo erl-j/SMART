@@ -5,7 +5,7 @@ from util import preview_sm
 from symusic import BuiltInSF3, Synthesizer
 import IPython.display as ipd
 
-checkpoint = "outputs/mt/treasured-cosmos-19/checkpoint-225000"
+checkpoint = "outputs/mt/treasured-cosmos-19/checkpoint-325000"
 # checkpoint = "outputs/mt/ruby-microwave-20/checkpoint-425000"
 
 tokenizer_config = miditok.TokenizerConfig.load_from_json("./data/tokenizer_config.json")
@@ -32,7 +32,7 @@ out = model.generate(
     bos_token_id=tokenizer.vocab["BOS_None"],
     eos_token_id=tokenizer.vocab["EOS_None"],
     num_return_sequences=1,
-    temperature=0.9,
+    temperature=1.0,
     use_cache=True
     # top_k=1,
     # top_p=0.95,

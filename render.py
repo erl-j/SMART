@@ -1,7 +1,26 @@
 import tinysoundfont
 import numpy as np
+from symusic import Synthesizer
+import symusic
 
-class MidiRenderer:
+class SymusicRenderer():
+    def __init__(self, soundfont_path, sample_rate):
+        self.synth = Synthesizer(
+            sf_path = soundfont_path, # the path to the soundfont
+            sample_rate = sample_rate, # the sample rate of the output wave, sample_rate is the default value
+        )
+        self.sample_rate = sample_rate
+
+    def render(self, midi_path_or_symusic, duration_seconds):
+        if isinstance(midi_path_or_symusic, str):
+            midi = symusic.Score(midi_path_or_symusic)
+        else:
+            midi = midi_path_or_symusic
+        audio = self.synth.render(midi, stereo=True)
+        audio = audio[:,:int(duration_seconds*self.sample_rate)]
+        return audio
+
+class TinySoundfontRenderer:
     def __init__(self, soundfont_path, sample_rate):
         """
         Initialize the MIDI renderer with a specified soundfont.
@@ -17,8 +36,6 @@ class MidiRenderer:
         self.sample_rate = sample_rate
         self.synth = tinysoundfont.Synth(samplerate=self.sample_rate)
         
-        # Load the soundfont
-        self.sfid = self.synth.sfload(soundfont_path)
         
         # Create a sequencer
     
@@ -59,3 +76,4 @@ class MidiRenderer:
         stereo_audio = np.stack([block[::2], block[1::2]])
         
         return stereo_audio
+    
