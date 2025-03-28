@@ -15,7 +15,7 @@ from tqdm import tqdm
 # run_path  = "artefacts/loops-touhou-2-iou-logstep-1e-6-beta=0.04-avg-aes-and-iou-8samples-mi-iou-0.25-32k-ce-pq"
 # run_path = "artefacts/drgpo-loops-touhou-2-iou-logstep-1e-4-beta=0.04-4samples-mi-iou-0.25-32k-ce-pq-16its"
 # run_path = "artefacts/piano-test-8-1e-4"
-run_path = "artefacts/loops-1e-4-beta=0.01"
+run_path = "artefacts/new-piano-long-2-ypd"
 # load all logs
 
 logs = glob.glob(run_path + "/rl_logs/**/*.parquet", recursive=True)
@@ -33,9 +33,6 @@ for col in logs.columns:
 
 # load all midi
 midi_paths = glob.glob(run_path + "/midi/**/*.mid", recursive=True)
-
-
-
 
 # create records with 
 midi = [{"midi_path": m, "reward_step": int(m.split("/")[-2].split("_")[0]), "idx" : int(m.split("_")[-1].replace(".mid","")) } for m in tqdm(midi_paths)]
@@ -196,6 +193,27 @@ ax.set_title('3D Contour Plot of Reward Distribution Evolution')
 ax.view_init(30, 45)
 
 plt.tight_layout()
+plt.show()
+
+
+
+#%%
+
+# lets make a heatmap of the reward distribution
+import seaborn as sns
+import matplotlib.pyplot as plt
+import numpy as np
+
+# create a heatmap of the reward distribution across time
+# x axis is reward_step, y axis is reward, color is density
+# first create a 2d histogram of the rewards2
+
+hist, xedges, yedges = np.histogram2d(logs["reward_step"], logs["reward"], bins=(100,10), range=[[0, 100], [0, 1]])
+# create a meshgrid
+X, Y = np.meshgrid(xedges, yedges)
+# plot the heatmap
+plt.pcolormesh(X, Y, hist.T, cmap="viridis")
+plt.colorbar()
 plt.show()
 
 # %%

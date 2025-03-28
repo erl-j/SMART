@@ -183,6 +183,7 @@ class SymusicSynthProcessor(Processor):
             audio = audio[:, :int(self.max_duration_seconds * self.sample_rate)]
         if audio.shape[1] > duration_seconds * self.sample_rate:
             audio = audio[:, :int(duration_seconds * self.sample_rate)]
+        audio = audio / np.abs(audio).max() + 1e-6
         return audio
     
     def __call__(self, records):
@@ -247,6 +248,9 @@ class TinySoundfontSynthProcessor(Processor):
             stereo_audio = stereo_audio[:, :int(self.max_duration_seconds * self.sample_rate)]
         if stereo_audio.shape[1] > duration_seconds * self.sample_rate:
             stereo_audio = stereo_audio[:, :int(duration_seconds * self.sample_rate)]
+        # normalize
+        stereo_audio = stereo_audio / np.abs(stereo_audio
+        ).max() + 1e-6
         return stereo_audio
     
     def __call__(self, records):
@@ -279,4 +283,60 @@ class ProgramPromptAdherenceRewardProcessor(Processor):
                 record["normalized_rewards"]["programs_iou"] = record["intersection_over_union_programs"]
             except:
                 print(f"Couldnt compute program intersection over union with prompt programs for record {record['idx']}")
+        return records
+
+from transformers import ClapModel, ClapProcessor
+
+class CLAPPromptRewardProcessor(Processor):
+
+    def __init__(self, sample_rate, target_prompt, k):
+        self.clap_model = ClapModel.from_pretrained("laion/larger_clap_music").to(0)
+        self.clap_processor = ClapProcessor.from_pretrained("laion/larger_clap_music")
+
+        # get text prompt features
+        inputs = self.clap_processor(text=target_prompt, return_tensors="pt").to(0)
+        self.text_embed = self.clap_model.get_text_features(**inputs).detach()
+        self.sample_rate = sample_rate
+        self.k = k
+
+        
+
+    def get_clap_features(self,audio_samples):
+        audio_samples = [audio_samples[i].mean(0) for i in range(len(audio_samples))]
+        inputs = self.clap_processor(audios=audio_samples, return_tensors="pt", sampling_rate=self.sample_rate).to(0)
+        audio_embed = self.clap_model.get_audio_features(**inputs)
+        return audio_embed
+
+    def get_clap_text_features(self,prompt):
+        inputs = self.clap_processor(text=prompt, return_tensors="pt").to(0)
+        text_embed = self.clap_model.get_text_features(**inputs)
+        return text_embed
+
+    def score_clap(self, audio):
+        audio_embed = self.get_clap_features(audio)
+        # get cosine similarity to text prompt
+        scores = torch.nn.functional.cosine_similarity(audio_embed, self.text_embed)
+        return scores
+    
+    def __call__(self, records):
+        # first get audio
+        audio = [record["audio"] for record in records]
+        scores = self.score_clap(audio)
+        
+        # Get sorted indices (highest score first)
+        sorted_indices = scores.argsort(descending=True)
+        
+        # Create custom reward mapping
+        rewards = torch.zeros_like(scores)
+        
+        # assign rewards to top k samples 1.0, (k-1)/k, (k-2)/k, ... 1/k
+        for i in range(self.k):
+            rewards[sorted_indices[i]] = 1 - i/self.k
+        
+        # All other samples get 0 by default
+        
+        # Apply rewards to records
+        for i, record in enumerate(records):
+            record["normalized_rewards"]["clap"] = rewards[i].item()
+        
         return records
