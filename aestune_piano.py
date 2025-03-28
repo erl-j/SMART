@@ -4,32 +4,41 @@ import datasets
 import torch
 import miditok
 from pathlib import Path
+import argparse
+
 # %%
-dataset = datasets.load_from_disk(f"../artefacts/dataset_mmd_v6")
-tokenizer = miditok.REMI(params=Path("../artefacts/tokenizer_remi_v6.json"))
-dataset
+dataset = datasets.load_from_disk("./artefacts/dataset_mmd_piano")
+tokenizer = miditok.REMI(params=Path("./artefacts/tokenizer_remi_v6.json"))
+
+# add a validation split take from test
+# dataset_test = dataset['test']
+# dataset = dataset['train'].train_test_split(test_size=0.1, seed=42, shuffle=True)
+# dataset['validation'] = dataset['test']
+# dataset['test'] = dataset_test
+# dataset.save_to_disk(f"./artefacts/dataset_mmd_piano")
 
 # %%
 print(tokenizer.vocab_size)
 print(tokenizer)
 # %%
-
-from transformers import Mamba2Config, Mamba2ForCausalLM
 from transformers import Phi3Config, Phi3ForCausalLM
 
+# Add argument parser
+parser = argparse.ArgumentParser(description="Aestune Model Training")
+parser.add_argument("-l","--num_hidden_layers", type=int, default=6, help="Number of hidden layers in the model")
+args = parser.parse_args()
 
 model_config = Phi3Config(
     vocab_size=tokenizer.vocab_size,
     eos_token_id=tokenizer.vocab["EOS_None"],
     bos_token_id=tokenizer.vocab["BOS_None"],
     pad_token_id=tokenizer.vocab["PAD_None"],
-    num_hidden_layers=6,
+    num_hidden_layers=args.num_hidden_layers,  # Use CLI argument
     hidden_size=512,
     intermediate_size=2048,
     num_attention_heads=8,
     )
 model = Phi3ForCausalLM(model_config)
-
 
 # print model params in scientific notation
 # print(f"Model has {model.num_parameters()} parameters")
@@ -87,31 +96,36 @@ class MyDataCollator:
 
 
 
-# %% train model for 1 epoch
+# %% train model 
 from transformers import Trainer, TrainingArguments
 import os
 import wandb
 from transformers.integrations import WandbCallback
+from transformers.trainer_callback import EarlyStoppingCallback
 from midi_player import MIDIPlayer
 from midi_player.stylers import cifka_advanced
 
 with wandb.init(
-    project="aestune",
+    project="aestune_piano",
     job_type="training",
     anonymous="allow",
+    # resume='auto'
 ) as run:
 
     training_args = TrainingArguments(
         output_dir=f'./outputs/{run.name}',
-        max_steps=50_000*3,
+        warmup_steps=500, 
+        max_steps=50_000*10,
         eval_strategy="steps",
         eval_steps=5000,
+        save_steps=5000,
+        save_total_limit=3,
+        metric_for_best_model="eval_loss",
+        load_best_model_at_end=True,
         # eval_on_start=True,
         per_device_train_batch_size=32,
         per_device_eval_batch_size=32,
-        warmup_steps=500, 
         weight_decay=0.01,
-        save_total_limit=1,
         bf16=True,
         # torch_compile=True,
         learning_rate=5e-4,
@@ -123,7 +137,7 @@ with wandb.init(
         model=model,                         # the instantiated 🤗 Transformers model to be trained
         args=training_args,                  # training arguments, defined above
         train_dataset=dataset['train'],         # training dataset
-        eval_dataset=dataset['test'],             # evaluation dataset
+        eval_dataset=dataset['validation'],             # evaluation dataset
         data_collator=MyDataCollator(tokenizer, 500),   
     )
 
@@ -170,15 +184,20 @@ with wandb.init(
             # print("after eval callback")
             assert not self.trainer.model.training
             self.render_prediction()
-
-
+    # add wandb callback
     progress_callback = WandbPredictionProgressCallback(
             trainer=trainer,
             tokenizer=tokenizer,
         )
     trainer.add_callback(progress_callback)
+    # add early stopping callback
+    trainer.add_callback(EarlyStoppingCallback(early_stopping_patience=3))
 
     trainer.train()
+
+# save best model
+model.save_pretrained(f"./artefacts/{run.name}/BEST/")
+
 
 #%%
 # from transformers import Phi3ForCausalLM
@@ -210,3 +229,8 @@ with wandb.init(
 #     )
 
 # %%
+
+
+# 4L, 512, 4x, 8H
+# 6L, 512, 4x, 8H
+# train until val loss goes up

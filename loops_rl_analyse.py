@@ -14,8 +14,8 @@ from tqdm import tqdm
 # run_path  = "artefacts/loops-fluir3-2-iou-logstep-1e-6-beta=0.04-avg-aes-and-iou-8samples-mi-iou-0.25-32k-ce-pq"
 # run_path  = "artefacts/loops-touhou-2-iou-logstep-1e-6-beta=0.04-avg-aes-and-iou-8samples-mi-iou-0.25-32k-ce-pq"
 # run_path = "artefacts/drgpo-loops-touhou-2-iou-logstep-1e-4-beta=0.04-4samples-mi-iou-0.25-32k-ce-pq-16its"
-# run_path = "artefacts/piano-test-6"
-run_path = "artefacts/loops-1e-4"
+# run_path = "artefacts/piano-test-8-1e-4"
+run_path = "artefacts/loops-1e-4-beta=0.01"
 # load all logs
 
 logs = glob.glob(run_path + "/rl_logs/**/*.parquet", recursive=True)

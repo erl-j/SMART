@@ -37,8 +37,6 @@ class TinySoundfontRenderer:
         self.synth = tinysoundfont.Synth(samplerate=self.sample_rate)
         # Load the soundfont
         sfid = self.synth.sfload(soundfont_path)
-        
-        
         # Create a sequencer
     
     def render(self, midi_path, duration_seconds):
@@ -59,23 +57,16 @@ class TinySoundfontRenderer:
         """
         # Load the MIDI file
         self.synth.notes_off()
-
         self.seq = tinysoundfont.Sequencer(self.synth)
-
         self.seq.midi_load(midi_path)
-        
         buffer_size = int(self.sample_rate * duration_seconds)
-        
         # Generate audio buffer
         buffer = self.synth.generate(buffer_size)
-        
         # Convert to numpy array
         block = np.frombuffer(bytes(buffer), dtype=np.float32)
-        
         # Reshape to stereo (channels, samples)
         # The buffer is interleaved stereo where left channel is even samples, 
         # right channel is odd samples
         stereo_audio = np.stack([block[::2], block[1::2]])
-        
         return stereo_audio
     
