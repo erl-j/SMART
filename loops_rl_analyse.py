@@ -21,7 +21,8 @@ from tqdm import tqdm
 # run_path = "artefacts/loops-matrix-iou"
 # run_path = "artefacts/loops-matrix-noprompt-jazz_fusion-b=0.04"
 # run_path = "artefacts/loops-matrix-noprompt-clap-judge"
-run_path = "/workspace/aestune/artefacts/loops-matrix-noprompt-clap-judge-0.25"
+# run_path = "/workspace/aestune/artefacts/loops-matrix-noprompt-clap-judge-0.25"
+run_path = "/workspace/aestune/artefacts/loops-matrix-noprompt-clap-judge-0.25-0.01"
 # load all logs
 
 logs = glob.glob(run_path + "/rl_logs/**/*.parquet", recursive=True)
