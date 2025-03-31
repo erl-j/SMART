@@ -32,12 +32,12 @@ GRADIENT_ACCUMULATION_STEPS = 1
 USE_BF16 = True
 NUM_GENERATIONS=8
 REWARD_WEIGHTS = {
-    # "CE": 1.0,
-    # "CU": 1.0,
-    # "PC": 0.0,
-    # "PQ": 1.0,
+    "CE": 1.0,
+    "CU": 1.0,
+    "PC": 0.0,
+    "PQ": 1.0,
     "programs_iou": 1.0,
-    "clap_clf":3.0,
+    # "clap_clf":3.0,
     # "clap":20.0
 }
 TEMPERATURE = 0.8
@@ -60,7 +60,7 @@ SAMPLE_RATE = 48_000
 SOUNDFONT = "matrix" 
 
 # get latest checkpoint
-OUTPUT_DIR = "artefacts/loops-matrix-noprompt-clap-judge-0.25-temp=0.8"
+OUTPUT_DIR = "artefacts/loops-matrix-ds-t=0.8"
 
 SF_PATH= {
         "musescore": str(BuiltInSF3.MuseScoreGeneral().path(download=True)), 
@@ -99,6 +99,7 @@ match MODEL:
         tempo_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Tempo_")]
         pitch_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Pitch_")]
         velocity_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Velocity_")]
+        duration_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Duration_")]
 
         print(f"Found {len(timesignature_tokens)} time signature tokens")
         print(f"Found {len(tempo_tokens)} tempo tokens")
@@ -142,8 +143,8 @@ match MODEL:
                                         position_zero_token, 
                                         random.choice(tempo_tokens), 
                                         random.choice(pitch_tokens), 
-                                        random.choice(velocity_tokens)
-                                        ]
+                                        random.choice(velocity_tokens),
+                                        random.choice(duration_tokens)]
                             }
                 trn_ds = Dataset.from_generator(gen)
                 max_prompt_length = len(trn_ds[0]["prompt"])
@@ -272,7 +273,7 @@ match MODEL:
                 # CLAPPromptRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="electronic dance music house", k=NUM_GENERATIONS//4),
                 # CLAPPromptSoftmaxRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="dance music for dancing", temperature=1.0),
                 # CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["rock", "metal", "pop", "classical"], target_prompt="jazz fusion", temperature=0.5),
-                CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["dissonant, low quality, caucophonous music"], target_prompt="beautiful, high quality, amazing music", temperature=0.25),
+                # CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["dissonant, low quality, caucophonous music"], target_prompt="beautiful, high quality, amazing music", temperature=0.25),
             ],
             reward_weights = REWARD_WEIGHTS,
             output_dir=OUTPUT_DIR
