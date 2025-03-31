@@ -40,7 +40,7 @@ REWARD_WEIGHTS = {
     # "clap_clf":3.0,
     # "clap":20.0
 }
-TEMPERATURE = 0.8
+TEMPERATURE = 1.2
 NUM_ITERATIONS = 1
 SCALE_REWARDS = True
 
@@ -60,7 +60,7 @@ SAMPLE_RATE = 48_000
 SOUNDFONT = "matrix" 
 
 # get latest checkpoint
-OUTPUT_DIR = "artefacts/loops-matrix-ds-t=0.8"
+OUTPUT_DIR = "artefacts/loops-matrix-ds-t=1.2"
 
 SF_PATH= {
         "musescore": str(BuiltInSF3.MuseScoreGeneral().path(download=True)), 
