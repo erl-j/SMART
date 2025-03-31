@@ -12,6 +12,13 @@ import numpy as np
 from symusic import Synthesizer
 import symusic
 from util import crop_sm, sm_seconds
+import datetime
+import numpy as np
+import tempfile
+import tinysoundfont
+import os
+from joblib import Parallel, delayed, parallel_backend
+import threading
 
 class RewardManager:
     def __init__(self, processors, reward_weights, output_dir):
@@ -40,8 +47,15 @@ class RewardManager:
         # add index
         records = [{"idx": i, **record} for i, record in enumerate(records)]
         # add full seqs
+        # take time of each process
+        time_taken = []
         for processor in self.processors:
+            start = datetime.datetime.now()
             records = processor(records)
+            end = datetime.datetime.now()
+            time_taken.append((processor.__class__.__name__, end-start))
+        print(f"Time taken for each processor: {time_taken}")
+
         # compute total reward
         for record in records:
             record["reward"] = sum([record["normalized_rewards"].get(key, 0) * self.reward_weights[key] for key in self.reward_weights.keys()]) / sum(self.reward_weights.values())
@@ -249,8 +263,10 @@ class TinySoundfontSynthProcessor(Processor):
         if stereo_audio.shape[1] > duration_seconds * self.sample_rate:
             stereo_audio = stereo_audio[:, :int(duration_seconds * self.sample_rate)]
         # normalize
-        stereo_audio = stereo_audio / np.abs(stereo_audio
-        ).max() + 1e-6
+        # if audio has zero durattion, set to zeros for 1 second
+        if stereo_audio.shape[1] == 0:
+            stereo_audio = np.zeros((2, self.sample_rate))
+        stereo_audio = stereo_audio / (np.abs(stereo_audio).max() + 1e-6)
         return stereo_audio
     
     def __call__(self, records):
@@ -263,6 +279,7 @@ class TinySoundfontSynthProcessor(Processor):
                 # add audio duration
                 record["audio_duration"] = record["audio"].shape[1] / self.sample_rate
         return records
+
 
 class ProgramPromptAdherenceRewardProcessor(Processor):
 
@@ -299,8 +316,6 @@ class CLAPPromptRewardProcessor(Processor):
         self.sample_rate = sample_rate
         self.k = k
 
-        
-
     def get_clap_features(self,audio_samples):
         audio_samples = [audio_samples[i].mean(0) for i in range(len(audio_samples))]
         inputs = self.clap_processor(audios=audio_samples, return_tensors="pt", sampling_rate=self.sample_rate).to(0)
@@ -323,20 +338,68 @@ class CLAPPromptRewardProcessor(Processor):
         audio = [record["audio"] for record in records]
         scores = self.score_clap(audio)
         
-        # Get sorted indices (highest score first)
-        sorted_indices = scores.argsort(descending=True)
-        
-        # Create custom reward mapping
-        rewards = torch.zeros_like(scores)
-        
-        # assign rewards to top k samples 1.0, (k-1)/k, (k-2)/k, ... 1/k
-        for i in range(self.k):
-            rewards[sorted_indices[i]] = 1 - i/self.k
+
+        # rescale from -1 to 1 to 0-1
+        norm_scores = (scores + 1) / 2 
+        #
         
         # All other samples get 0 by default
         
         # Apply rewards to records
         for i, record in enumerate(records):
-            record["normalized_rewards"]["clap"] = rewards[i].item()
+            record["normalized_rewards"]["clap"] = norm_scores[i].item()
+            record["clap_score_raw"] = scores[i].item()
+        
+        return records
+
+
+class CLAPZeroShotClassificationRewardProcessor(Processor):
+
+    def __init__(self, sample_rate, target_prompt, reference_prompts, temperature):
+        self.clap_model = ClapModel.from_pretrained("laion/larger_clap_general").to(0)
+        self.clap_processor = ClapProcessor.from_pretrained("laion/larger_clap_general")
+
+        prompts = [target_prompt] + reference_prompts
+        # get text prompt features
+        self.text_embeds = []
+        for prompt in prompts:
+            inputs = self.clap_processor(text=prompt, return_tensors="pt").to(0)
+            self.text_embeds.append(self.clap_model.get_text_features(**inputs).detach())
+        self.sample_rate = sample_rate
+        self.temperature = temperature
+
+    def get_clap_features(self,audio_samples):
+        audio_samples = [audio_samples[i].mean(0) for i in range(len(audio_samples))]
+        inputs = self.clap_processor(audios=audio_samples, return_tensors="pt", sampling_rate=self.sample_rate).to(0)
+        audio_embed = self.clap_model.get_audio_features(**inputs)
+        return audio_embed
+
+    def get_clap_text_features(self,prompt):
+        inputs = self.clap_processor(text=prompt, return_tensors="pt").to(0)
+        text_embed = self.clap_model.get_text_features(**inputs)
+        return text_embed
+
+    def score_clap(self, audio):
+        audio_embed = self.get_clap_features(audio).detach()
+        # get softmax over all text prompts
+        # get cosine similarity to text prompt
+        scores = torch.nn.functional.cosine_similarity(audio_embed, torch.stack(self.text_embeds), dim=-1)
+        # get softmax
+        scores = torch.nn.functional.softmax(scores / self.temperature, dim=0).T
+        print(f"Scores: {scores.shape}")
+        return scores
+    
+    def __call__(self, records):
+        # first get audio
+        audio = [record["audio"] for record in records]
+        raw_scores = self.score_clap(audio)
+
+        print(f"Raw scores: {raw_scores.shape}")
+
+        # Apply rewards to records
+        for i, record in enumerate(records):
+            # save raw scores
+            record["clap_score_raw"] = raw_scores[i].cpu().numpy()
+            record["normalized_rewards"]["clap_clf"] = raw_scores[i][0].item()
         
         return records

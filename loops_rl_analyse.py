@@ -15,7 +15,13 @@ from tqdm import tqdm
 # run_path  = "artefacts/loops-touhou-2-iou-logstep-1e-6-beta=0.04-avg-aes-and-iou-8samples-mi-iou-0.25-32k-ce-pq"
 # run_path = "artefacts/drgpo-loops-touhou-2-iou-logstep-1e-4-beta=0.04-4samples-mi-iou-0.25-32k-ce-pq-16its"
 # run_path = "artefacts/piano-test-8-1e-4"
-run_path = "artefacts/new-piano-long-2-ypd"
+# run_path = "artefacts/new-piano-long-2-ypd"
+# run_path = "artefacts/loops-long-2-ypd-house-softmax-t=1.0-scaled-6"
+# run_path = "artefacts/jazz-piano-not-relative-20x-matrix"
+# run_path = "artefacts/loops-matrix-iou"
+# run_path = "artefacts/loops-matrix-noprompt-jazz_fusion-b=0.04"
+# run_path = "artefacts/loops-matrix-noprompt-clap-judge"
+run_path = "/workspace/aestune/artefacts/loops-matrix-noprompt-clap-judge-0.25"
 # load all logs
 
 logs = glob.glob(run_path + "/rl_logs/**/*.parquet", recursive=True)
@@ -66,45 +72,22 @@ plt.show()
 plt.scatter(logs["reward_step"], logs["normalized_rewards_CE"], alpha=0.1)
 plt.show()
 
-# 
-# plt.scatter( logs["reward_step"],logs["normalized_rewards_programs_iou"], alpha=0.1, c="green")
 
-# # plot step and content enjoyment
-# plt.scatter(logs["reward_step"], logs["normalized_rewards_CE"], alpha=0.1, c="red")
+#%%
+# plot clap_score_raw over tim
 
-# make violin plot at each step
-import seaborn as sns
-sns.violinplot(data=logs, x="reward_step", y="normalized_rewards_CE", color="red")
-
-sns.violinplot(data=logs, x="reward_step", y="normalized_rewards_programs_iou", color="green")
-
-# add violin plot for reward
-sns.violinplot(data=logs, x="reward_step", y="reward", color="blue")
-
-# plot mean of normalized rewards CE over steps
-plt.plot(logs.groupby("reward_step")["normalized_rewards_CE"].mean(), c="red")
-# plot mean of normalized rewards programs iou over steps
-plt.plot(logs.groupby("reward_step")["normalized_rewards_programs_iou"].mean(), c="green")
-# plot mean of reward over steps
-plt.plot(logs.groupby("reward_step")["reward"].mean(), c="blue")
+plt.scatter(logs["reward_step"], logs["normalized_rewards_clap_clf"], alpha=0.1)
 plt.show()
 
-
-
-
-# plot rolling average of rewards (grouped my step) across time
-plt.plot(logs.groupby("reward_step")["reward"].mean().rolling(5).mean(), c="blue")
-plt.plot(logs.groupby("reward_step")["normalized_rewards_CE"].mean().rolling(5).mean(), c="red")
+# fit line
+import numpy as np
+from sklearn.linear_model import LinearRegression
+X = logs["reward_step"].values.reshape(-1, 1)
+y = logs["normalized_rewards_clap_clf"].values
+reg = LinearRegression().fit(X, y)
+plt.scatter(X, y, alpha=0.1)
+plt.plot(X, reg.predict(X), c="red")
 plt.show()
-
-# plot the min reward at each step
-plt.plot(logs.groupby("reward_step")["reward"].min(), c="blue")
-plt.plot(logs.groupby("reward_step")["normalized_rewards_CE"].min(), c="red")
-plt.plot(logs.groupby("reward_step")["normalized_rewards_programs_iou"].min(), c="green")
-plt.title("min reward at each step")
-plt.show()
-
-
 #%%
 
 # plot ce, cu, pc, pq mean across steps

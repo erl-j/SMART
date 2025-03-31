@@ -15,7 +15,7 @@ import numpy as np
 import glob
 from symusic import dump_wav
 import random
-from processors import RewardManager, MidiTokToSymusicProcessor, SymusicSynthProcessor, TinySoundfontSynthProcessor, AudioBoxAesRewardProcessor, ProgramPromptAdherenceRewardProcessor, CLAPPromptRewardProcessor
+from processors import RewardManager, MidiTokToSymusicProcessor, SymusicSynthProcessor, TinySoundfontSynthProcessor, AudioBoxAesRewardProcessor, ProgramPromptAdherenceRewardProcessor, CLAPPromptRewardProcessor, CLAPZeroShotClassificationRewardProcessor
 from loops_util import prepare_input
 #%%
 os.environ["WANDB_PROJECT"] = "music-grpo"  # name your W&B project
@@ -27,19 +27,20 @@ torch.manual_seed(SEED)
 np.random.seed(SEED)
 random.seed(SEED)
 
-BATCH_SIZE=64
+BATCH_SIZE=32
 GRADIENT_ACCUMULATION_STEPS = 1
 USE_BF16 = True
 NUM_GENERATIONS=8
 REWARD_WEIGHTS = {
-    "CE": 1.0,
-    "CU": 1.0,
-    "PC": 0.0,
-    "PQ": 1.0,
-    # "programs_iou": 0.25,
-    "clap":3.0
+    # "CE": 1.0,
+    # "CU": 1.0,
+    # "PC": 0.0,
+    # "PQ": 1.0,
+    "programs_iou": 1.0,
+    "clap_clf":3.0,
+    # "clap":20.0
 }
-TEMPERATURE = 1.0
+TEMPERATURE = 0.8
 NUM_ITERATIONS = 1
 SCALE_REWARDS = True
 
@@ -49,17 +50,17 @@ BETA = 0.04
 
 # MODEL = "piano" #"MIL"
 # PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
-MODEL = "piano"
-PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
+MODEL = "MIL"
+PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
 
 N_PROMPTS = (NUM_TRAIN_STEPS * BATCH_SIZE // NUM_GENERATIONS) * 10
 
 SAMPLE_RATE = 48_000
-SOUNDFONT = "grandeur" 
+SOUNDFONT = "matrix" 
 
 # get latest checkpoint
-OUTPUT_DIR = "artefacts/new-piano-long-2-ypd-jazzy"
+OUTPUT_DIR = "artefacts/loops-matrix-noprompt-clap-judge-0.25-temp=0.8"
 
 SF_PATH= {
         "musescore": str(BuiltInSF3.MuseScoreGeneral().path(download=True)), 
@@ -77,13 +78,15 @@ SF_PATH= {
         "candy":"soundfonts/Candy_Set_Full_GM.sf2",
         "808": "soundfonts/General808.sf2",
         "grandeur": "soundfonts/[GD] The Grandeur D.sf2",
-        "ydp": "soundfonts/YDP-GrandPiano-SF2-20160804/YDP-GrandPiano-20160804.sf2"
+        "ydp": "soundfonts/YDP-GrandPiano-SF2-20160804/YDP-GrandPiano-20160804.sf2",
+        "yamaha": "soundfonts/Yamaha-C5-Salamander-JNv5_1.sf2",
+        "matrix": "soundfonts/MatrixSF_v2.1.5.sf2"
             }[SOUNDFONT]
 
 match MODEL:
     case "piano":
         MAX_COMPLETION_LENGTH = 512
-        MAX_BEATS = None
+        MAX_BEATS = 64
         MAX_AUDIO_DURATION = 16
 
         # BASE_MODEL_PATH = "lucacasini/metamidipianophi3"
@@ -150,10 +153,13 @@ match MODEL:
         reward_manager = RewardManager(
             processors = [
                 MidiTokToSymusicProcessor(tokenizer, is_multitrack=False, max_beats=100),
+                # TinySoundfontSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
                 TinySoundfontSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
                 # SymusicSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
                 AudioBoxAesRewardProcessor(),
-                CLAPPromptRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="jazzy jazz piano solo", k=NUM_GENERATIONS//4),
+                # CLAPPromptRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="jazzy jazz piano solo", k=NUM_GENERATIONS),
+                CLAPPromptRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="jazz", k=NUM_GENERATIONS),
+                # CLAPPromptSoftmaxRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="jazz", temperature=1.0),
             ],
             reward_weights = REWARD_WEIGHTS,
             output_dir=OUTPUT_DIR
@@ -162,7 +168,7 @@ match MODEL:
     case "MIL":
         MAX_COMPLETION_LENGTH = 2048
         MAX_BEATS = 16
-        MAX_AUDIO_DURATION = 32
+        MAX_AUDIO_DURATION = 24
 
         BASE_MODEL_PATH = "/workspace/aestune/outputs/mt/treasured-cosmos-19/checkpoint-325000"
         TOKENIZER_CONFIG_PATH = "data/tokenizer_config.json"
@@ -204,6 +210,25 @@ match MODEL:
                         yield {"prompt": [tokenizer.vocab["BOS_None"], tokenizer.vocab["Program_0"], tokenizer.vocab["Bar_None"], tokenizer.vocab["TimeSig_4/4"], tokenizer.vocab["Position_0"], np.random.choice(tempo_tokens)]}
                 trn_ds = Dataset.from_generator(gen)
                 max_prompt_length = len(trn_ds[0]["prompt"])
+            case "bass_drums_keys":
+                def gen():
+                    for i in range(N_PROMPTS):
+                        yield {"prompt": [tokenizer.vocab["BOS_None"], tokenizer.vocab["Program_5"],tokenizer.vocab["Program_36"], tokenizer.vocab["Program_-1"], tokenizer.vocab["Bar_None"], tokenizer.vocab["TimeSig_4/4"], tokenizer.vocab["Position_0"], np.random.choice(tempo_tokens)]}
+                trn_ds = Dataset.from_generator(gen)
+                max_prompt_length = len(trn_ds[0]["prompt"])
+            case "flbass_drums_keys":
+                def gen():
+                    for i in range(N_PROMPTS):
+                        yield {"prompt": [tokenizer.vocab["BOS_None"], tokenizer.vocab["Program_4"],tokenizer.vocab["Program_35"], tokenizer.vocab["Program_-1"], tokenizer.vocab["Bar_None"], tokenizer.vocab["TimeSig_4/4"], tokenizer.vocab["Position_0"], np.random.choice(tempo_tokens)]}
+                trn_ds = Dataset.from_generator(gen)
+                max_prompt_length = len(trn_ds[0]["prompt"])
+            case "bass_drums_keys_gtr":
+                def gen():
+                    for i in range(N_PROMPTS):
+                        yield {"prompt": [tokenizer.vocab["BOS_None"], tokenizer.vocab["Program_5"],tokenizer.vocab["Program_36"], tokenizer.vocab["Program_-1"],tokenizer.vocab["Program_28"], tokenizer.vocab["Bar_None"], tokenizer.vocab["TimeSig_4/4"], tokenizer.vocab["Position_0"], np.random.choice(tempo_tokens)]}
+                trn_ds = Dataset.from_generator(gen)
+                max_prompt_length = len(trn_ds[0]["prompt"])
+            
             case "dataset":
                 print("Loading dataset")
                 trn_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/trn_subset")
@@ -244,7 +269,10 @@ match MODEL:
                 TinySoundfontSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
                 AudioBoxAesRewardProcessor(),
                 ProgramPromptAdherenceRewardProcessor(),
-                CLAPPromptRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="electronic dance music house", k=NUM_GENERATIONS//4),
+                # CLAPPromptRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="electronic dance music house", k=NUM_GENERATIONS//4),
+                # CLAPPromptSoftmaxRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="dance music for dancing", temperature=1.0),
+                # CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["rock", "metal", "pop", "classical"], target_prompt="jazz fusion", temperature=0.5),
+                CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["dissonant, low quality, caucophonous music"], target_prompt="beautiful, high quality, amazing music", temperature=0.25),
             ],
             reward_weights = REWARD_WEIGHTS,
             output_dir=OUTPUT_DIR
