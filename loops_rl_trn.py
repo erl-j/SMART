@@ -38,7 +38,7 @@ REWARD_WEIGHTS = {
     # "PQ": 1.0,
     # "programs_iou": 3.0,
     "programs_iou": 1.0,
-    "clap_clf":1.0,
+    # "clap_clf":1.0,
     # "clap":20.0
 }
 TEMPERATURE = 1.0
@@ -54,7 +54,7 @@ BETA = 0.04
 # MODEL = "piano" #"MIL"
 # PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 MODEL = "MIL"
-PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
+PROMPT_SOURCE = "bass_drums_keys" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
 
 N_PROMPTS = (NUM_TRAIN_STEPS * BATCH_SIZE // NUM_GENERATIONS) * 10
@@ -63,7 +63,7 @@ SAMPLE_RATE = 48_000
 SOUNDFONT = "matrix" if MODEL == "MIL" else "yamaha"
 
 # get latest checkpoint
-OUTPUT_DIR = "artefacts/mil-clap-iou-ds"
+OUTPUT_DIR = "artefacts/mil-iou-only-bass_drums_keys"
 
 SF_PATH= {
         "musescore": str(BuiltInSF3.MuseScoreGeneral().path(download=True)), 

@@ -27,7 +27,11 @@ from tqdm import tqdm
 # run_path = "artefacts/loops-matrix-beta=0.08"
 # run_path = "artefacts/loops-matrix-iou-bass_drums_keys"
 # run_path = "artefacts/loops-matrix-iou-bass_drums_keys-2-gtr"
-run_path = "artefacts/piano-clap-only-10s"
+# run_path = "artefacts/piano-clap-only-10s"
+# run_path = "artefacts/piano-aes-only-10s"
+# run_path = "artefacts/mil-clap-iou-bass_drums_keys"
+run_path = "artefacts/mil-aes-iou-bass_drums_keys"
+# run_path = "artefacts/mil-iou-only-bass_drums_keys"
 # load all logs
 
 logs = glob.glob(run_path + "/rl_logs/**/*.parquet", recursive=True)
@@ -116,14 +120,17 @@ plt.plot(X, reg.predict(X), c="red")
 plt.show()
 #%%
 
+
+print(logs["normalized_rewards_programs_iou"].describe())
 # plot ce, cu, pc, pq mean across steps
 plt.plot(logs.groupby("reward_step")["normalized_rewards_CE"].mean(), c="red", label="CE")
 plt.plot(logs.groupby("reward_step")["normalized_rewards_CU"].mean(), c="teal", label="CU")
 plt.plot(logs.groupby("reward_step")["normalized_rewards_programs_iou"].mean(), c="green", label="IOU")
 plt.plot(logs.groupby("reward_step")["normalized_rewards_PC"].mean(), c="orange", label="PC")
 plt.plot(logs.groupby("reward_step")["normalized_rewards_PQ"].mean(), c="purple", label="PQ")
+plt.plot(logs.groupby("reward_step")["normalized_rewards_clap_clf"].mean(), c="black", label="clap")
 # plot average reward in blue
-plt.plot(logs.groupby("reward_step")["reward"].mean(), c="blue", label="reward")
+# plt.plot(logs.groupby("reward_step")["reward"].mean(), c="blue", label="reward")
 plt.legend()
 plt.title("Mean reward across steps")
 plt.show()
@@ -225,4 +232,21 @@ plt.pcolormesh(X, Y, hist.T, cmap="viridis")
 plt.colorbar()
 plt.show()
 
+# %%
+
+# take logs of first step only
+logs_first = logs#[logs["reward_step"] == 0]
+for rew in ["CE", "CU", "PC", "PQ"]:
+    # scatter plot of clap score clf vs ce
+    plt.scatter(logs_first["normalized_rewards_clap_clf"], logs_first[f"normalized_rewards_{rew}"], alpha=0.5, s=1)
+    # set x and y limits to 0,1
+    plt.xlim(0,1)
+    plt.ylim(0,1)
+    # label axes
+    plt.xlabel("clap clf")
+    plt.ylabel(rew)
+    plt.show()
+
+
+# now same for clap score clf vs iou
 # %%
