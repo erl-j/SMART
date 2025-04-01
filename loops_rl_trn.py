@@ -32,20 +32,23 @@ GRADIENT_ACCUMULATION_STEPS = 1
 USE_BF16 = True
 NUM_GENERATIONS=8
 REWARD_WEIGHTS = {
-    "CE": 1.0,
-    "CU": 1.0,
-    "PC": 0.0,
-    "PQ": 1.0,
+    # "CE": 1.0,
+    # "CU": 1.0,
+    # "PC": 0.0,
+    # "PQ": 1.0,
+    # "programs_iou": 3.0,
     "programs_iou": 1.0,
-    # "clap_clf":3.0,
+    "clap_clf":1.0,
     # "clap":20.0
 }
-TEMPERATURE = 1.2
+TEMPERATURE = 1.0
 NUM_ITERATIONS = 1
 SCALE_REWARDS = True
 
-NUM_TRAIN_STEPS = 1000
+NUM_TRAIN_STEPS = 100
 LEARNING_RATE = 1e-4
+SEARCH_SAMPLING_PARAMS = False
+
 BETA = 0.04
 
 # MODEL = "piano" #"MIL"
@@ -57,10 +60,10 @@ AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
 N_PROMPTS = (NUM_TRAIN_STEPS * BATCH_SIZE // NUM_GENERATIONS) * 10
 
 SAMPLE_RATE = 48_000
-SOUNDFONT = "matrix" 
+SOUNDFONT = "matrix" if MODEL == "MIL" else "yamaha"
 
 # get latest checkpoint
-OUTPUT_DIR = "artefacts/loops-matrix-ds-t=1.2"
+OUTPUT_DIR = "artefacts/mil-clap-iou-ds"
 
 SF_PATH= {
         "musescore": str(BuiltInSF3.MuseScoreGeneral().path(download=True)), 
@@ -87,7 +90,7 @@ match MODEL:
     case "piano":
         MAX_COMPLETION_LENGTH = 512
         MAX_BEATS = 64
-        MAX_AUDIO_DURATION = 16
+        MAX_AUDIO_DURATION = 10
 
         # BASE_MODEL_PATH = "lucacasini/metamidipianophi3"
         BASE_MODEL_PATH = "lucacasini/metamidipianophi3_6L"
@@ -158,8 +161,9 @@ match MODEL:
                 TinySoundfontSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
                 # SymusicSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
                 AudioBoxAesRewardProcessor(),
+                CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["dissonant, low quality, caucophonous music, glitch, midi"], target_prompt="beautiful, high quality, amazing music, natural, calming", temperature=0.25),
                 # CLAPPromptRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="jazzy jazz piano solo", k=NUM_GENERATIONS),
-                CLAPPromptRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="jazz", k=NUM_GENERATIONS),
+                # CLAPPromptRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="jazz", k=NUM_GENERATIONS),
                 # CLAPPromptSoftmaxRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="jazz", temperature=1.0),
             ],
             reward_weights = REWARD_WEIGHTS,
@@ -269,18 +273,13 @@ match MODEL:
                 MidiTokToSymusicProcessor(tokenizer, is_multitrack=True, max_beats=MAX_BEATS),
                 TinySoundfontSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
                 AudioBoxAesRewardProcessor(),
+                CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["dissonant, low quality, caucophonous music, glitch, midi"], target_prompt="groovy, amazing, natural, high quality, studio, live", temperature=0.25),
+                # CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["dissonant, low quality, caucophonous music, glitch, midi"], target_prompt="beautiful, high quality, amazing music, natural, calming", temperature=0.25),
                 ProgramPromptAdherenceRewardProcessor(),
-                # CLAPPromptRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="electronic dance music house", k=NUM_GENERATIONS//4),
-                # CLAPPromptSoftmaxRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="dance music for dancing", temperature=1.0),
-                # CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["rock", "metal", "pop", "classical"], target_prompt="jazz fusion", temperature=0.5),
-                # CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["dissonant, low quality, caucophonous music"], target_prompt="beautiful, high quality, amazing music", temperature=0.25),
             ],
             reward_weights = REWARD_WEIGHTS,
             output_dir=OUTPUT_DIR
         )
-
-
-#%%
 
 #%%
 class DummyTokenizer():
@@ -295,9 +294,7 @@ class DummyTokenizer():
     def save_pretrained(self, path):
         print(f"Calling save_pretrained with {path} (does nothing)")
     def __call__(self,  **kwargs):
-        # print(f"Calling __call__ with {kwargs}")
-        x = kwargs["text"]
-        input_ids = torch.tensor(x)
+        input_ids = torch.tensor( kwargs["text"])
         attention_mask = torch.where(
             input_ids != self.pad_token_id, 1, 0
         )
@@ -306,6 +303,75 @@ class DummyTokenizer():
             "attention_mask": attention_mask
         }
 dummy_tokenizer = DummyTokenizer(tokenizer)
+
+
+if SEARCH_SAMPLING_PARAMS:
+    # first do a grid search over temperature
+    test_temperatures = [0.1, 0.5, 0.8, 0.85, 0.9, 0.95, 0.99, 1.0, 1.1]
+
+    # get a batch
+    test_batch = trn_ds[:64]
+
+    # rename prompt to text
+    test_batch["text"] = test_batch["prompt"]
+
+    # load model on gpu
+    model.to("cuda")
+
+
+    all_records = []
+    for test_temperature in test_temperatures:
+        outputs = model.generate(
+                        input_ids=dummy_tokenizer(**test_batch)["input_ids"].to("cuda"),
+                        do_sample=True,
+                        temperature=test_temperature,
+                        max_length=MAX_COMPLETION_LENGTH,
+                        pad_token_id=dummy_tokenizer.pad_token_id,
+                        eos_token_id=dummy_tokenizer.eos_token_id,
+                        bos_token_id=dummy_tokenizer.bos_token_id,
+        )
+
+        records = reward_manager(completions = torch.tensor(outputs).cpu(), prompts = test_batch["prompt"],return_records=True)
+        # get rewards
+        # add temperature to records
+        records = [{**r, "temperature": test_temperature} for r in records]
+        # concatenate records into big list
+        all_records.extend(records)
+
+
+    # print average rewards per temperature
+    import pandas as pd
+    from IPython.display import display
+
+    # print keys in first record
+    logs = pd.DataFrame.from_records(all_records)
+
+    # print columns
+    for col in logs.columns:
+        print(col)
+
+    for col in ["normalized_rewards"]:
+        if logs[col].apply(lambda x: isinstance(x, dict)).all():
+            logs = pd.concat([logs, logs[col].apply(pd.Series).add_prefix(col + "_")], axis=1)
+            logs.drop(col, axis=1, inplace=True)
+
+
+    # print mean of normalized rewards per temperature and reward
+    for temp in test_temperatures:
+        print(f"Temperature: {temp}")
+        # get normalized rewards for this temperature
+        temp_logs = logs[logs["temperature"] == temp]
+        # print mean of normalized rewards
+        # for everything that starts with normalized_rewards_
+        for col in temp_logs.columns:
+            if col.startswith("normalized_rewards_"):
+                print(f"{col}: {temp_logs[col].mean()}")
+        print("\n\n")
+
+    # save logs to parquet
+    logs_ds = Dataset.from_pandas(logs)
+    logs_ds.save_to_disk(f"artefacts/temperature_search_logs_{MODEL}_{PROMPT_SOURCE}")
+
 # %%
 config = GRPOConfig(
     num_iterations=NUM_ITERATIONS,

@@ -32,7 +32,7 @@ class RewardManager:
         self.audio_save_interval = 10
         self.__name__ = "RewardManager"
 
-    def __call__(self, completions, prompts, **kwargs):
+    def __call__(self, completions, prompts, return_records=False, **kwargs):
         # Render completions
         prompt_and_completions = torch.cat([torch.Tensor(prompts), completions.cpu()], dim=1)
 
@@ -62,7 +62,11 @@ class RewardManager:
             record["reward_weights"] = self.reward_weights
         self.export_records_callback(records)
         self.global_reward_step += 1
-        return [record["reward"] for record in records]
+
+        if return_records:
+            return records
+        else:
+            return [record["reward"] for record in records]
 
     def export_records_callback(self, records):
 

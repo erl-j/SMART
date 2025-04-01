@@ -22,7 +22,12 @@ from tqdm import tqdm
 # run_path = "artefacts/loops-matrix-noprompt-jazz_fusion-b=0.04"
 # run_path = "artefacts/loops-matrix-noprompt-clap-judge"
 # run_path = "/workspace/aestune/artefacts/loops-matrix-noprompt-clap-judge-0.25"
-run_path = "/workspace/aestune/artefacts/loops-matrix-noprompt-clap-judge-0.25-temp=0.8"
+# run_path = "/workspace/aestune/artefacts/loops-matrix-noprompt-clap-judge-0.25-temp=0.8"
+# run_path = "artefacts/loops-matrix-ds-t=1.0"
+# run_path = "artefacts/loops-matrix-beta=0.08"
+# run_path = "artefacts/loops-matrix-iou-bass_drums_keys"
+# run_path = "artefacts/loops-matrix-iou-bass_drums_keys-2-gtr"
+run_path = "artefacts/piano-clap-only-10s"
 # load all logs
 
 logs = glob.glob(run_path + "/rl_logs/**/*.parquet", recursive=True)
@@ -44,6 +49,8 @@ midi_paths = glob.glob(run_path + "/midi/**/*.mid", recursive=True)
 # create records with 
 midi = [{"midi_path": m, "reward_step": int(m.split("/")[-2].split("_")[0]), "idx" : int(m.split("_")[-1].replace(".mid","")) } for m in tqdm(midi_paths)]
 
+
+
 # if normalized_rewards_programs_iou is missing, add it as 0
 if "normalized_rewards_programs_iou" not in logs.columns:
     logs["normalized_rewards_programs_iou"] = 0
@@ -56,7 +63,9 @@ midi = pd.DataFrame(midi)
 logs = logs.merge(midi, on=["reward_step", "idx"], how="inner")
 
 # %%
+import symusic
 
+logs["midi"] = logs["midi_path"].apply(lambda x: symusic.Score(x))
 # print all columns
 for col in logs.columns:
     print(col)
@@ -74,6 +83,22 @@ plt.scatter(logs["reward_step"], logs["normalized_rewards_CE"], alpha=0.1)
 plt.show()
 
 
+#%%
+logs["n_notes"] = logs["midi"].apply(lambda x: x.note_num())
+
+# plot number of notes over time
+plt.scatter(logs["reward_step"], logs["n_notes"], alpha=0.02)
+plt.show()
+#%%
+
+# now get response length in tokens
+logs["completion_length"] = logs["completion"].apply(lambda x: len(x))
+
+# plot response length over time
+plt.scatter(logs["reward_step"], logs["completion_length"], alpha=0.01)
+plt.show()
+
+# plot number of notes over time
 #%%
 # plot clap_score_raw over tim
 
