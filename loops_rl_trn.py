@@ -43,8 +43,8 @@ BETA = 0.04
 
 # MODEL = "piano" #"MIL"
 # PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
-MODEL = "piano"
-PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
+MODEL = "mil"
+PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
 SAVE_STEPS = 20
 N_EVAL_PROMPTS=100
@@ -58,12 +58,12 @@ SAMPLE_RATE = 48_000
 SOUNDFONT = "matrix" if MODEL == "mil" else "yamaha"
 
 REWARD_WEIGHTS = {
-    "CE": 1.0,
-    "CU": 1.0,
-    "PC": 0.0,
-    "PQ": 1.0,
+    # "CE": 1.0,
+    # "CU": 1.0,
+    # "PC": 0.0,
+    # "PQ": 1.0,
     # "programs_iou": 3.0,
-    # "programs_iou": 1.0,
+    "programs_iou": 1.0,
     # "pam_avg": 1.0,
     # "clap_clf":1.0,
     # "clap":20.0
@@ -124,7 +124,17 @@ prompt_pairs = [
 
 
 # get latest checkpoint
-OUTPUT_DIR = f"artefacts/all_runs/{MODEL}-{PROMPT_SOURCE}/aes2-{BETA}-{TEMPERATURE}-{NUM_ITERATIONS}"
+OUTPUT_DIR = f"artefacts/all_runs/{MODEL}-{PROMPT_SOURCE}/aes-iou-{BETA}-{TEMPERATURE}"
+
+# warn if output dir exists and may be overwritten
+if os.path.exists(OUTPUT_DIR):
+    print(f"Warning: Output directory {OUTPUT_DIR} already exists and may be overwritten.")
+    print("Type 'yes' to continue, or 'no' to abort.")
+    response = input()
+    if response != "yes":
+        raise ValueError("Aborted by user.")
+else:
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 SF_PATH= {
         "musescore": str(BuiltInSF3.MuseScoreGeneral().path(download=True)), 

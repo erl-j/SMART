@@ -4,37 +4,11 @@ import glob
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-# run_path = "artefacts/loops-fluir3-2-iou-logstep-1e-4"
-# run_path = "artefacts/loops-fluir3-2-iou-logstep-1e-4-beta=0.01"
-# run_path = "artefacts/loops-fluir3-2-iou-logstep-1e-4-beta=0.01-16gens"
-# run_path = "artefacts/loops-fluir3-2-iou-logstep-1e-4-beta=0.01-avg-aes-and-iou"
-# run_path = "artefacts/loops-fluir3-2-iou-logstep-1e-4-beta=0.01-avg-aes-and-iou-32samples-piano"
-# run_path = "artefacts/loops-fluir3-2-iou-logstep-1e-4-beta=0.01-avg-aes-and-iou-32samples-piano-random-tempo"
-# run_path = "artefacts/loops-fluir3-2-iou-logstep-1e-5-beta=0.04-avg-aes-and-iou-32samples-mi-iou-0.25"
-# run_path  = "artefacts/loops-fluir3-2-iou-logstep-1e-6-beta=0.04-avg-aes-and-iou-8samples-mi-iou-0.25-32k"
-# run_path  = "artefacts/loops-fluir3-2-iou-logstep-1e-6-beta=0.04-avg-aes-and-iou-8samples-mi-iou-0.25-32k-ce-pq"
-# run_path  = "artefacts/loops-touhou-2-iou-logstep-1e-6-beta=0.04-avg-aes-and-iou-8samples-mi-iou-0.25-32k-ce-pq"
-# run_path = "artefacts/drgpo-loops-touhou-2-iou-logstep-1e-4-beta=0.04-4samples-mi-iou-0.25-32k-ce-pq-16its"
-# run_path = "artefacts/piano-test-8-1e-4"
-# run_path = "artefacts/new-piano-long-2-ypd"
-# run_path = "artefacts/loops-long-2-ypd-house-softmax-t=1.0-scaled-6"
-# run_path = "artefacts/jazz-piano-not-relative-20x-matrix"
-# run_path = "artefacts/loops-matrix-iou"
-# run_path = "artefacts/loops-matrix-noprompt-jazz_fusion-b=0.04"
-# run_path = "artefacts/loops-matrix-noprompt-clap-judge"
-# run_path = "/workspace/aestune/artefacts/loops-matrix-noprompt-clap-judge-0.25"
-# run_path = "/workspace/aestune/artefacts/loops-matrix-noprompt-clap-judge-0.25-temp=0.8"
-# run_path = "artefacts/loops-matrix-ds-t=1.0"
-# run_path = "artefacts/loops-matrix-beta=0.08"
-# run_path = "artefacts/loops-matrix-iou-bass_drums_keys"
-# run_path = "artefacts/loops-matrix-iou-bass_drums_keys-2-gtr"
-# run_path = "artefacts/piano-clap-only-10s"
-# run_path = "artefacts/piano-aes-only-10s"
-# run_path = "artefacts/mil-clap-iou-bass_drums_keys"
-# run_path = "artefacts/mil-aes-iou-bass_drums_keys"
-run_path = "artefacts/all_runs/mil-dataset/pam-iou-0.0-1"
-# run_path = "artefacts/mil-iou-only-bass_drums_keys"
-# load all logs
+
+# run_path = "artefacts/all_runs/mil-dataset/pam-iou-0.04-1-1"
+run_path = "artefacts/all_runs/piano-procedural/newpam-0.04-1-1"
+
+#%%
 
 logs = glob.glob(run_path + "/rl_logs/**/*.parquet", recursive=True)
 
