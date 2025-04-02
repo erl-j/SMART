@@ -2,6 +2,7 @@
 import pandas as pd
 import glob
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 # run_path = "artefacts/loops-fluir3-2-iou-logstep-1e-4"
 # run_path = "artefacts/loops-fluir3-2-iou-logstep-1e-4-beta=0.01"
@@ -30,7 +31,8 @@ from tqdm import tqdm
 # run_path = "artefacts/piano-clap-only-10s"
 # run_path = "artefacts/piano-aes-only-10s"
 # run_path = "artefacts/mil-clap-iou-bass_drums_keys"
-run_path = "artefacts/mil-aes-iou-bass_drums_keys"
+# run_path = "artefacts/mil-aes-iou-bass_drums_keys"
+run_path = "artefacts/all_runs/mil-dataset/pam-iou-0.0-1"
 # run_path = "artefacts/mil-iou-only-bass_drums_keys"
 # load all logs
 
@@ -53,18 +55,63 @@ midi_paths = glob.glob(run_path + "/midi/**/*.mid", recursive=True)
 # create records with 
 midi = [{"midi_path": m, "reward_step": int(m.split("/")[-2].split("_")[0]), "idx" : int(m.split("_")[-1].replace(".mid","")) } for m in tqdm(midi_paths)]
 
-
-
 # if normalized_rewards_programs_iou is missing, add it as 0
 if "normalized_rewards_programs_iou" not in logs.columns:
     logs["normalized_rewards_programs_iou"] = 0
 
-
-#%%
 # join logs and midi on reward_step and idx
 
 midi = pd.DataFrame(midi)
 logs = logs.merge(midi, on=["reward_step", "idx"], how="inner")
+
+# plot all normalized rewards over time
+# get field that stra
+normalized_rewards = [col for col in logs.columns if "normalized_rewards" in col]
+
+for rew in normalized_rewards:
+    plt.plot(logs.groupby("reward_step")[rew].mean(), label=rew)
+
+# also include average reward
+plt.plot(logs.groupby("reward_step")["reward"].mean(), label="reward")
+plt.legend()
+plt.show()
+
+n_rewards = len(normalized_rewards)
+
+# show normalized_rewards_pam_avg in a scatter plot
+plt.scatter(logs["reward_step"], logs["normalized_rewards_pam_avg"], alpha=0.1)
+plt.legend()
+plt.show()
+# fit a line to the data
+import numpy as np
+from sklearn.linear_model import LinearRegression
+X = logs["reward_step"].values.reshape(-1, 1)
+y = logs["normalized_rewards_pam_avg"].values
+reg = LinearRegression().fit(X, y)
+plt.scatter(X, y, alpha=0.1)
+plt.plot(X, reg.predict(X), c="red")
+plt.show()
+
+
+
+
+# for 
+
+# # for each reward, plot the distribution of the reward across steps using subplots 
+# for step in logs["reward_step"].unique():
+#     plt.figure()
+#     for i, rew in enumerate(normalized_rewards):
+#         plt.subplot(n_rewards, 1, i+1)
+#         plt.hist(logs[logs["reward_step"] == step][rew], bins=10, range=(0,1))
+#         plt.title(rew)
+#     plt.show()
+
+
+
+
+
+
+
 
 # %%
 import symusic

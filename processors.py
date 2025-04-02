@@ -19,6 +19,7 @@ import tinysoundfont
 import os
 from joblib import Parallel, delayed, parallel_backend
 import threading
+import einops
 
 class RewardManager:
     def __init__(self, processors, reward_weights, output_dir):
@@ -32,7 +33,10 @@ class RewardManager:
         self.audio_save_interval = 10
         self.__name__ = "RewardManager"
 
-    def __call__(self, completions, prompts, return_records=False, **kwargs):
+    def reset(self):
+        self.global_reward_step = 0
+
+    def __call__(self, completions, prompts, return_records=False, **kwargs,):
         # Render completions
         prompt_and_completions = torch.cat([torch.Tensor(prompts), completions.cpu()], dim=1)
 
@@ -41,7 +45,7 @@ class RewardManager:
             "prompt": prompt, 
             "prompt_and_completion": prompt_and_completion,
             "normalized_rewards":{}, 
-            "reward_step": self.global_reward_step
+            "reward_step": self.global_reward_step,
             } for completion, prompt, prompt_and_completion in zip(completions, prompts,prompt_and_completions)]
 
         # add index
@@ -60,15 +64,15 @@ class RewardManager:
         for record in records:
             record["reward"] = sum([record["normalized_rewards"].get(key, 0) * self.reward_weights[key] for key in self.reward_weights.keys()]) / sum(self.reward_weights.values())
             record["reward_weights"] = self.reward_weights
-        self.export_records_callback(records)
-        self.global_reward_step += 1
 
         if return_records:
             return records
         else:
+            self.export_records(records, save_audio=self.global_reward_step % self.audio_save_interval, output_dir=self.output_dir, step=self.global_reward_step) 
+            self.global_reward_step += 1
             return [record["reward"] for record in records]
 
-    def export_records_callback(self, records):
+    def export_records(self, records, save_audio, output_dir, step):
 
         # Prepare logs (exclude audio and sm fields)
         logs = []
@@ -80,22 +84,22 @@ class RewardManager:
             logs.append(log)
         
         # Save logs as parquet
-        os.makedirs(f"{self.output_dir}/rl_logs/{self.global_reward_step}", exist_ok=True)
+        os.makedirs(f"{output_dir}/rl_logs/{step}", exist_ok=True)
         log_ds = Dataset.from_list(logs)
-        log_ds.to_parquet(f"{self.output_dir}/rl_logs/{self.global_reward_step}/logs.parquet")
+        log_ds.to_parquet(f"{output_dir}/rl_logs/{step}/logs.parquet")
         
         # Save MIDI files
-        os.makedirs(f"{self.output_dir}/midi/{self.global_reward_step}", exist_ok=True)
+        os.makedirs(f"{output_dir}/midi/{step}", exist_ok=True)
         for i in range(len(records)):
-            records[i]["sm"].dump_midi(f"{self.output_dir}/midi/{self.global_reward_step}/reward={records[i]["reward"]}_{i}.mid")
+            records[i]["sm"].dump_midi(f"{output_dir}/midi/{step}/reward={records[i]["reward"]}_{records[i]["idx"]}.mid")
         
         # Save audio files periodically
-        if self.global_reward_step % self.audio_save_interval == 0:
-            os.makedirs(f"{self.output_dir}/audio/{self.global_reward_step}", exist_ok=True)
+        if save_audio:
+            os.makedirs(f"{output_dir}/audio/{step}", exist_ok=True)
             for i in range(len(records)):
                 try:
                     dump_wav(
-                        f"{self.output_dir}/audio/{self.global_reward_step}/reward={records[i]["reward"]}_{i}.wav", 
+                        f"{output_dir}/audio/{step}/reward={records[i]["reward"]}_{records[i]["idx"]}.wav", 
                         records[i]["audio"], 
                         records[i]["sample_rate"], 
                         use_int16=True
@@ -356,9 +360,7 @@ class CLAPPromptRewardProcessor(Processor):
         
         return records
 
-
 class CLAPZeroShotClassificationRewardProcessor(Processor):
-
     def __init__(self, sample_rate, target_prompt, reference_prompts, temperature):
         self.clap_model = ClapModel.from_pretrained("laion/larger_clap_general").to(0)
         self.clap_processor = ClapProcessor.from_pretrained("laion/larger_clap_general")
@@ -406,4 +408,82 @@ class CLAPZeroShotClassificationRewardProcessor(Processor):
             record["clap_score_raw"] = raw_scores[i].cpu().numpy()
             record["normalized_rewards"]["clap_clf"] = raw_scores[i][0].item()
         
+        return records
+
+class PamRewardProcessor(Processor):
+    def __init__(self, sample_rate, prompt_configs ,temperature):
+        self.clap_model = ClapModel.from_pretrained("laion/larger_clap_general").to(0)
+        self.clap_processor = ClapProcessor.from_pretrained("laion/larger_clap_general")
+
+        self.prompt_configs = prompt_configs
+        # make list of all positive and negative prompts
+        prompts_positive = []
+        prompts_negative = []
+        for prompt_config in prompt_configs:
+            prompts_positive.append(prompt_config["positive"])
+            prompts_negative.append(prompt_config["negative"])
+
+        # Process all positives, then all negatives
+        prompts = prompts_positive + prompts_negative
+        # get text prompt features
+        self.text_embeds = []
+        for prompt in prompts:
+            inputs = self.clap_processor(text=prompt, return_tensors="pt").to(0)
+            self.text_embeds.append(self.clap_model.get_text_features(**inputs).detach())
+        self.text_embeds = torch.stack(self.text_embeds)[:,0,:]
+        self.sample_rate = sample_rate
+        self.temperature = temperature
+
+    def get_clap_features(self,audio_samples):
+        audio_samples = [audio_samples[i].mean(0) for i in range(len(audio_samples))]
+        inputs = self.clap_processor(audios=audio_samples, return_tensors="pt", sampling_rate=self.sample_rate).to(0)
+        audio_embed = self.clap_model.get_audio_features(**inputs)
+        return audio_embed
+
+    def get_clap_text_features(self,prompt):
+        inputs = self.clap_processor(text=prompt, return_tensors="pt").to(0)
+        text_embed = self.clap_model.get_text_features(**inputs)
+        return text_embed
+
+    def score_clap(self, audio):
+        '''
+        takes audio and returns a list of dicts with scores for each pam prompt
+        '''
+        audio_embed = self.get_clap_features(audio).detach()
+        n_audio = len(audio)
+        n_prompts = len(self.prompt_configs)
+    
+        scores = audio_embed @ self.text_embeds.T  # Shape: [n_audio, n_prompts*2
+          # Split scores into positive and negative parts
+        pos_scores = scores[:, :n_prompts]  # First half are positives
+        neg_scores = scores[:, n_prompts:]  # Second half are negatives
+        
+        # Stack them for softmax calculation
+        paired_scores = torch.stack([pos_scores, neg_scores], dim=-1)  # Shape: [n_audio, n_prompts, 2]
+        
+        # Apply softmax along the last dimension (positive vs negative)
+        probabilities = torch.nn.functional.softmax(paired_scores / self.temperature, dim=-1)
+        
+        # Extract the probability of the positive class
+        pos_probs = probabilities[..., 0]  # Shape: [n_audio, n_prompts]
+        
+        assert pos_probs.shape[1] == len(self.prompt_configs)
+        assert pos_probs.shape[0] == len(audio)
+        
+        score_records = []
+        for audio_idx in range(n_audio):
+            audio_scores = {}
+            for prompt_idx, prompt_config in enumerate(self.prompt_configs):
+                prompt = prompt_config["shorthand"]
+                audio_scores[prompt] = pos_probs[audio_idx, prompt_idx].item()
+            audio_scores["pam_avg"] = pos_probs[audio_idx, :].mean().item()
+            score_records.append(audio_scores)
+        return score_records
+ 
+
+    def __call__(self, records):
+        audio = [record["audio"] for record in records]
+        scores = self.score_clap(audio)
+        for i in range(len(records)):
+            records[i]["normalized_rewards"] = {**records[i]["normalized_rewards"], **scores[i]}
         return records

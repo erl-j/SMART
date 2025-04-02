@@ -15,7 +15,7 @@ import numpy as np
 import glob
 from symusic import dump_wav
 import random
-from processors import RewardManager, MidiTokToSymusicProcessor, SymusicSynthProcessor, TinySoundfontSynthProcessor, AudioBoxAesRewardProcessor, ProgramPromptAdherenceRewardProcessor, CLAPPromptRewardProcessor, CLAPZeroShotClassificationRewardProcessor
+from processors import RewardManager, MidiTokToSymusicProcessor, TinySoundfontSynthProcessor, AudioBoxAesRewardProcessor, ProgramPromptAdherenceRewardProcessor, CLAPZeroShotClassificationRewardProcessor, PamRewardProcessor
 from loops_util import prepare_input
 #%%
 os.environ["WANDB_PROJECT"] = "music-grpo"  # name your W&B project
@@ -27,10 +27,36 @@ torch.manual_seed(SEED)
 np.random.seed(SEED)
 random.seed(SEED)
 
-BATCH_SIZE=32
 GRADIENT_ACCUMULATION_STEPS = 1
 USE_BF16 = True
 NUM_GENERATIONS=8
+
+TEMPERATURE = 1
+NUM_ITERATIONS = 1
+SCALE_REWARDS = True
+
+NUM_TRAIN_STEPS = 1000
+LEARNING_RATE = 1e-4
+SEARCH_SAMPLING_PARAMS = False
+
+BETA = 0.00
+
+# MODEL = "piano" #"MIL"
+# PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
+MODEL = "mil"
+PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
+AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
+SAVE_STEPS = 20
+N_EVAL_PROMPTS=100
+
+BATCH_SIZE=32 if MODEL == "mil" else 64
+
+
+N_PROMPTS = (NUM_TRAIN_STEPS * BATCH_SIZE // NUM_GENERATIONS) * 10
+
+SAMPLE_RATE = 48_000
+SOUNDFONT = "matrix" if MODEL == "mil" else "yamaha"
+
 REWARD_WEIGHTS = {
     # "CE": 1.0,
     # "CU": 1.0,
@@ -38,32 +64,61 @@ REWARD_WEIGHTS = {
     # "PQ": 1.0,
     # "programs_iou": 3.0,
     "programs_iou": 1.0,
+    "pam_avg": 1.0,
     # "clap_clf":1.0,
     # "clap":20.0
 }
-TEMPERATURE = 1.0
-NUM_ITERATIONS = 1
-SCALE_REWARDS = True
 
-NUM_TRAIN_STEPS = 100
-LEARNING_RATE = 1e-4
-SEARCH_SAMPLING_PARAMS = False
-
-BETA = 0.04
-
-# MODEL = "piano" #"MIL"
-# PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
-MODEL = "MIL"
-PROMPT_SOURCE = "bass_drums_keys" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
-AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
-
-N_PROMPTS = (NUM_TRAIN_STEPS * BATCH_SIZE // NUM_GENERATIONS) * 10
-
-SAMPLE_RATE = 48_000
-SOUNDFONT = "matrix" if MODEL == "MIL" else "yamaha"
+prompt_pairs = [
+    {
+        "shorthand": "glitchless",
+        "positive": "A smooth, uninterrupted stream of music with seamless transitions and no audible digital artifacts.",
+        "negative": "An erratic, glitch-filled recording where audio cuts and pops interrupt the musical flow."
+    },
+    {
+        "shorthand": "expressive",
+        "positive": "A performance full of dynamic shifts, emotional phrasing, and subtle nuances like a skilled human performer.",
+        "negative": "A lifeless playback with flat dynamics and no emotional variation, like a mechanical piano roll."
+    },
+    {
+        "shorthand": "naturalfeel",
+        "positive": "A flowing performance with human-like timing and expressive tempo changes, resembling a live ensemble.",
+        "negative": "Rigid, quantized rhythms that feel artificial and machine-generated, lacking any sense of performance."
+    },
+    {
+        "shorthand": "clarity",
+        "positive": "Each instrument sits clearly in the mix, with a balanced arrangement that allows the texture to breathe.",
+        "negative": "A cluttered wall of sound where instruments clash and details are buried in a muddy mix."
+    },
+    {
+        "shorthand": "interest",
+        "positive": "A composition that unfolds with evolving ideas and engaging motifs that hold the listener's attention.",
+        "negative": "Repetitive and uninspired phrases that loop endlessly without development or variation."
+    },
+    {
+        "shorthand": "prosound",
+        "positive": "A polished and refined mix with high fidelity, smooth panning, and well-controlled dynamics, like a studio production.",
+        "negative": "An unbalanced mix with harsh frequencies and clumsy instrument blending, sounding like a demo or draft."
+    },
+    {
+        "shorthand": "intent",
+        "positive": "A carefully structured piece where every phrase feels deliberate and musically purposeful.",
+        "negative": "Random, unfocused playing where sections seem thrown together without a clear sense of form."
+    },
+    {
+        "shorthand": "groove",
+        "positive": "A tight, rhythmically locked groove that makes the music feel alive and drives it forward with energy.",
+        "negative": "Loose and awkward timing that undermines the rhythm, making the piece feel unstable or hesitant."
+    },
+    {
+        "shorthand": "realism",
+        "positive": "Richly rendered instruments that emulate acoustic sources with convincing timbre and articulation.",
+        "negative": "Synthetic, plastic-sounding tones that clearly resemble low-quality MIDI instruments."
+    },
+]
 
 # get latest checkpoint
-OUTPUT_DIR = "artefacts/mil-iou-only-bass_drums_keys"
+OUTPUT_DIR = f"artefacts/all_runs/{MODEL}-{PROMPT_SOURCE}/pam-iou-{BETA}-{TEMPERATURE}"
 
 SF_PATH= {
         "musescore": str(BuiltInSF3.MuseScoreGeneral().path(download=True)), 
@@ -104,40 +159,7 @@ match MODEL:
         velocity_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Velocity_")]
         duration_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Duration_")]
 
-        print(f"Found {len(timesignature_tokens)} time signature tokens")
-        print(f"Found {len(tempo_tokens)} tempo tokens")
-        print(f"Found {len(pitch_tokens)} pitch tokens")
-        print(f"Found {len(velocity_tokens)} velocity tokens")
-
         match PROMPT_SOURCE:
-            case "dataset":
-                print("Loading dataset")
-                trn_ds = Dataset.load_from_disk("data/dataset_mmd_piano/train")
-                print("Dataset loaded")
-                # print length of dataset
-                # take random subset of 1000
-                print("Taking random subset")
-                trn_ds = trn_ds.shuffle()
-                # take random subset
-                trn_ds = trn_ds.select(range(N_PROMPTS))
-                # trn_ds = trn_ds.filter(lambda x: len(x["token_ids"]) <= MAX_COMPLETION_LENGTH)
-
-                max_prompt_length = 8
-
-                def extract_prompt(token_ids):
-                    tokens = tokenizer._ids_to_tokens(token_ids)
-                    print(tokens)
-                    # find index of first token with tempo in it
-                    first_tempo_idx = next((i for i, token in enumerate(tokens) if token.startswith("Tempo_")), None)
-                    # crop prompt up to tempo token
-                    prompt = token_ids[:first_tempo_idx+1]
-                    # pad left with PAD tokens until max_prompt_length
-                    prompt =[tokenizer.vocab["PAD_None"]] * (max_prompt_length - len(prompt)) + prompt
-                    return prompt
-                
-                # when using dataset as prompt, we need to prepare the input
-                trn_ds = trn_ds.map(lambda x: {"prompt": extract_prompt(prepare_input(x["tokens"], tokenizer))})
-                print("Dataset loaded")
             case "procedural":
                 def gen():
                     for i in range(N_PROMPTS):
@@ -150,6 +172,14 @@ match MODEL:
                                         random.choice(duration_tokens)]
                             }
                 trn_ds = Dataset.from_generator(gen)
+                tst_ds = Dataset.from_generator(gen).select(range(N_EVAL_PROMPTS))
+                max_prompt_length = len(trn_ds[0]["prompt"])
+            case "no prompt":
+                def gen():
+                    for i in range(N_PROMPTS):
+                        yield {"prompt": [tokenizer.vocab["BOS_None"]]}
+                trn_ds = Dataset.from_generator(gen)
+                tst_ds = Dataset.from_generator(gen).select(range(N_EVAL_PROMPTS))
                 max_prompt_length = len(trn_ds[0]["prompt"])
             case _:
                 raise ValueError("Invalid prompt source for piano model")
@@ -157,20 +187,16 @@ match MODEL:
         reward_manager = RewardManager(
             processors = [
                 MidiTokToSymusicProcessor(tokenizer, is_multitrack=False, max_beats=100),
-                # TinySoundfontSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
                 TinySoundfontSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
-                # SymusicSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
                 AudioBoxAesRewardProcessor(),
-                CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["dissonant, low quality, caucophonous music, glitch, midi"], target_prompt="beautiful, high quality, amazing music, natural, calming", temperature=0.25),
-                # CLAPPromptRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="jazzy jazz piano solo", k=NUM_GENERATIONS),
-                # CLAPPromptRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="jazz", k=NUM_GENERATIONS),
-                # CLAPPromptSoftmaxRewardProcessor(sample_rate=SAMPLE_RATE, target_prompt="jazz", temperature=1.0),
+                # CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["dissonant, low quality, caucophonous music, glitch, midi"], target_prompt="beautiful, high quality, amazing music, natural, calming", temperature=0.25),
+                PamRewardProcessor(sample_rate=SAMPLE_RATE, prompt_configs=prompt_pairs,temperature=0.25)
             ],
             reward_weights = REWARD_WEIGHTS,
             output_dir=OUTPUT_DIR
         )
 
-    case "MIL":
+    case "mil":
         MAX_COMPLETION_LENGTH = 2048
         MAX_BEATS = 16
         MAX_AUDIO_DURATION = 24
@@ -190,61 +216,52 @@ match MODEL:
 
         match PROMPT_SOURCE:
             case "no prompt":
-                print(f"Found {len(timesignature_tokens)} time signature tokens")
-                print(f"Found {len(tempo_tokens)} tempo tokens")
-                print(f"Found {len(pitch_tokens)} pitch tokens")
-                print(f"Found {len(velocity_tokens)} velocity tokens")
-
-
                 def gen():
                     for i in range(N_PROMPTS):
-                        yield {"prompt": [tokenizer.vocab["BOS_None"] #, random.choice(program_tokens)
+                        yield {"prompt": [tokenizer.vocab["BOS_None"]
                                         ]
                             }
                 trn_ds = Dataset.from_generator(gen)
+                tst_ds = Dataset.from_generator(gen).select(range(N_EVAL_PROMPTS))
                 max_prompt_length = len(trn_ds[0]["prompt"])
             case "procedural":
                 def gen():
                     for i in range(N_PROMPTS):
                         yield {"prompt": [tokenizer.vocab["BOS_None"], random.choice(program_tokens)]}
                 trn_ds = Dataset.from_generator(gen)
+                tst_ds = Dataset.from_generator(gen).select(range(N_EVAL_PROMPTS))
                 max_prompt_length = len(trn_ds[0]["prompt"])
             case "piano":
                 def gen():
                     for i in range(N_PROMPTS):
                         yield {"prompt": [tokenizer.vocab["BOS_None"], tokenizer.vocab["Program_0"], tokenizer.vocab["Bar_None"], tokenizer.vocab["TimeSig_4/4"], tokenizer.vocab["Position_0"], np.random.choice(tempo_tokens)]}
                 trn_ds = Dataset.from_generator(gen)
+                tst_ds = Dataset.from_generator(gen).select(range(N_EVAL_PROMPTS))
+                max_prompt_length = len(trn_ds[0]["prompt"])
+            case "drums":
+                def gen():
+                    for i in range(N_PROMPTS):
+                        yield {"prompt": [tokenizer.vocab["BOS_None"], tokenizer.vocab["Program_-1"], tokenizer.vocab["Bar_None"], tokenizer.vocab["TimeSig_4/4"], tokenizer.vocab["Position_0"], np.random.choice(tempo_tokens)]}
+                trn_ds = Dataset.from_generator(gen)
+                tst_ds = Dataset.from_generator(gen).select(range(N_EVAL_PROMPTS))
                 max_prompt_length = len(trn_ds[0]["prompt"])
             case "bass_drums_keys":
                 def gen():
                     for i in range(N_PROMPTS):
                         yield {"prompt": [tokenizer.vocab["BOS_None"], tokenizer.vocab["Program_5"],tokenizer.vocab["Program_36"], tokenizer.vocab["Program_-1"], tokenizer.vocab["Bar_None"], tokenizer.vocab["TimeSig_4/4"], tokenizer.vocab["Position_0"], np.random.choice(tempo_tokens)]}
                 trn_ds = Dataset.from_generator(gen)
+                tst_ds = Dataset.from_generator(gen).select(range(N_EVAL_PROMPTS))
                 max_prompt_length = len(trn_ds[0]["prompt"])
-            case "flbass_drums_keys":
-                def gen():
-                    for i in range(N_PROMPTS):
-                        yield {"prompt": [tokenizer.vocab["BOS_None"], tokenizer.vocab["Program_4"],tokenizer.vocab["Program_35"], tokenizer.vocab["Program_-1"], tokenizer.vocab["Bar_None"], tokenizer.vocab["TimeSig_4/4"], tokenizer.vocab["Position_0"], np.random.choice(tempo_tokens)]}
-                trn_ds = Dataset.from_generator(gen)
-                max_prompt_length = len(trn_ds[0]["prompt"])
-            case "bass_drums_keys_gtr":
-                def gen():
-                    for i in range(N_PROMPTS):
-                        yield {"prompt": [tokenizer.vocab["BOS_None"], tokenizer.vocab["Program_5"],tokenizer.vocab["Program_36"], tokenizer.vocab["Program_-1"],tokenizer.vocab["Program_28"], tokenizer.vocab["Bar_None"], tokenizer.vocab["TimeSig_4/4"], tokenizer.vocab["Position_0"], np.random.choice(tempo_tokens)]}
-                trn_ds = Dataset.from_generator(gen)
-                max_prompt_length = len(trn_ds[0]["prompt"])
-            
             case "dataset":
-                print("Loading dataset")
                 trn_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/trn_subset")
-                print("Dataset loaded")
-                # print length of dataset
-                # take random subset of 1000
-                print("Taking random subset")
                 trn_ds = trn_ds.shuffle()
-                # take random subset
-                trn_ds = trn_ds.select(range(N_PROMPTS))
                 trn_ds = trn_ds.filter(lambda x: len(x["token_ids"]) <= MAX_COMPLETION_LENGTH)
+                trn_ds = trn_ds.select(range(N_PROMPTS))
+
+                tst_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/tst")
+                tst_ds = tst_ds.shuffle()
+                tst_ds = tst_ds.filter(lambda x: len(x["token_ids"]) <= MAX_COMPLETION_LENGTH)
+                tst_ds = tst_ds.select(range(N_EVAL_PROMPTS))
 
                 max_prompt_length = 32
 
@@ -260,7 +277,7 @@ match MODEL:
                 
                 # when using dataset as prompt, we need to prepare the input
                 trn_ds = trn_ds.map(lambda x: {"prompt": extract_prompt(prepare_input(x["token_ids"], tokenizer))})
-                print("Dataset loaded")
+                tst_ds = tst_ds.map(lambda x: {"prompt": extract_prompt(prepare_input(x["token_ids"], tokenizer))})
             case _:
                 raise ValueError("Invalid prompt source for MIL model")
 
@@ -273,15 +290,14 @@ match MODEL:
                 MidiTokToSymusicProcessor(tokenizer, is_multitrack=True, max_beats=MAX_BEATS),
                 TinySoundfontSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
                 AudioBoxAesRewardProcessor(),
-                CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["dissonant, low quality, caucophonous music, glitch, midi"], target_prompt="groovy, amazing, natural, high quality, studio, live", temperature=0.25),
-                # CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["dissonant, low quality, caucophonous music, glitch, midi"], target_prompt="beautiful, high quality, amazing music, natural, calming", temperature=0.25),
+                PamRewardProcessor(sample_rate=SAMPLE_RATE, prompt_configs=prompt_pairs,temperature=0.25),
+                # CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["dissonant, low quality, caucophonous music, glitch, midi"], target_prompt="groovy, amazing, natural, high quality, studio, live", temperature=0.25),
                 ProgramPromptAdherenceRewardProcessor(),
             ],
             reward_weights = REWARD_WEIGHTS,
             output_dir=OUTPUT_DIR
         )
 
-#%%
 class DummyTokenizer():
     def __init__(self,tokenizer):
         self.pad_token_id = tokenizer.vocab["PAD_None"]
@@ -305,73 +321,63 @@ class DummyTokenizer():
 dummy_tokenizer = DummyTokenizer(tokenizer)
 
 
-if SEARCH_SAMPLING_PARAMS:
-    # first do a grid search over temperature
-    test_temperatures = [0.1, 0.5, 0.8, 0.85, 0.9, 0.95, 0.99, 1.0, 1.1]
-
-    # get a batch
-    test_batch = trn_ds[:64]
+def evaluate_base_model(model, dataset, reward_manager, output_dir, batch_size=BATCH_SIZE):
+    """Generate examples from base model and evaluate with reward function using batched inference"""
+    import os
+    import torch
+    import pandas as pd
+    from tqdm import tqdm
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    model.eval()
+    model.to("cuda")
+    all_results = []
 
     # rename prompt to text
-    test_batch["text"] = test_batch["prompt"]
-
-    # load model on gpu
-    model.to("cuda")
-
-
-    all_records = []
-    for test_temperature in test_temperatures:
-        outputs = model.generate(
-                        input_ids=dummy_tokenizer(**test_batch)["input_ids"].to("cuda"),
-                        do_sample=True,
-                        temperature=test_temperature,
-                        max_length=MAX_COMPLETION_LENGTH,
-                        pad_token_id=dummy_tokenizer.pad_token_id,
-                        eos_token_id=dummy_tokenizer.eos_token_id,
-                        bos_token_id=dummy_tokenizer.bos_token_id,
+    dataset = dataset.rename_column("prompt", "text")
+    
+    # Process examples in batches
+    for i in tqdm(range(0, len(dataset), batch_size)):
+        batch_end = min(i + batch_size, len(dataset))
+        batch = dataset[i:batch_end]
+        
+        # use dummy tokenizer to encode the prompts
+        batch = dummy_tokenizer(**batch)
+        completions = []
+        
+        # Generate completions for the batch
+        with torch.no_grad():
+            completions = model.generate(
+                input_ids = batch["input_ids"].to("cuda"),
+                attention_mask = batch["attention_mask"].to("cuda"),
+                max_length=MAX_COMPLETION_LENGTH,
+                do_sample=True,
+                temperature=TEMPERATURE,
+                pad_token_id=dummy_tokenizer.pad_token_id,
+                eos_token_id=dummy_tokenizer.eos_token_id,
+            ).cpu()
+    
+        # Evaluate the batch with reward function
+        records = reward_manager(
+            prompts=batch["input_ids"],
+            completions=completions,
+            return_records=True,
         )
 
-        records = reward_manager(completions = torch.tensor(outputs).cpu(), prompts = test_batch["prompt"],return_records=True)
-        # get rewards
-        # add temperature to records
-        records = [{**r, "temperature": test_temperature} for r in records]
-        # concatenate records into big list
-        all_records.extend(records)
+        # replace idx in records with relative idx in dataset
+        for record in records:
+            record["idx"] = i + record["idx"]
+        reward_manager.export_records(records, save_audio=True, output_dir=output_dir + "/eval", step=0)
 
+    # Save results
+    print(f"Evaluation complete. Results saved to {output_dir}")
+    print(f"Total records: {len(all_results)}")
+    
+    return all_results
 
-    # print average rewards per temperature
-    import pandas as pd
-    from IPython.display import display
-
-    # print keys in first record
-    logs = pd.DataFrame.from_records(all_records)
-
-    # print columns
-    for col in logs.columns:
-        print(col)
-
-    for col in ["normalized_rewards"]:
-        if logs[col].apply(lambda x: isinstance(x, dict)).all():
-            logs = pd.concat([logs, logs[col].apply(pd.Series).add_prefix(col + "_")], axis=1)
-            logs.drop(col, axis=1, inplace=True)
-
-
-    # print mean of normalized rewards per temperature and reward
-    for temp in test_temperatures:
-        print(f"Temperature: {temp}")
-        # get normalized rewards for this temperature
-        temp_logs = logs[logs["temperature"] == temp]
-        # print mean of normalized rewards
-        # for everything that starts with normalized_rewards_
-        for col in temp_logs.columns:
-            if col.startswith("normalized_rewards_"):
-                print(f"{col}: {temp_logs[col].mean()}")
-        print("\n\n")
-
-    # save logs to parquet
-    logs_ds = Dataset.from_pandas(logs)
-    logs_ds.save_to_disk(f"artefacts/temperature_search_logs_{MODEL}_{PROMPT_SOURCE}")
-
+evaluate_base_model(model, tst_ds, reward_manager, output_dir=OUTPUT_DIR + "/pre_eval", batch_size=BATCH_SIZE)
+reward_manager.reset()
 # %%
 config = GRPOConfig(
     num_iterations=NUM_ITERATIONS,
@@ -386,23 +392,27 @@ config = GRPOConfig(
     logging_steps=1,
     num_generations=NUM_GENERATIONS,
     per_device_train_batch_size=BATCH_SIZE,
-    save_steps=NUM_TRAIN_STEPS,
+    save_steps=SAVE_STEPS,
     beta=BETA,
     bf16=USE_BF16,
     gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
-    # set schedule to fixed
-    # lr_scheduler_type
 )
-trainer = GRPOTrainer(
 
+trainer = GRPOTrainer(
     model=model,
     reward_funcs=reward_manager,
     args =  config,
     train_dataset=trn_ds,
     processing_class=dummy_tokenizer,
+    eval_dataset=tst_ds,
 
 )
 # save model
 trainer.train()
 trainer.save_model()
+
+reward_manager.reset()
+
+evaluate_base_model(model, tst_ds, reward_manager, output_dir=OUTPUT_DIR + "/post_eval", batch_size=BATCH_SIZE)
 # %%
+# now we can generate completions with the trn_ds
