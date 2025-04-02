@@ -35,16 +35,16 @@ TEMPERATURE = 1
 NUM_ITERATIONS = 1
 SCALE_REWARDS = True
 
-NUM_TRAIN_STEPS = 1000
+NUM_TRAIN_STEPS = 100
 LEARNING_RATE = 1e-4
 SEARCH_SAMPLING_PARAMS = False
 
-BETA = 0.00
+BETA = 0.04
 
 # MODEL = "piano" #"MIL"
 # PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
-MODEL = "mil"
-PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
+MODEL = "piano"
+PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
 SAVE_STEPS = 20
 N_EVAL_PROMPTS=100
@@ -58,13 +58,13 @@ SAMPLE_RATE = 48_000
 SOUNDFONT = "matrix" if MODEL == "mil" else "yamaha"
 
 REWARD_WEIGHTS = {
-    # "CE": 1.0,
-    # "CU": 1.0,
-    # "PC": 0.0,
-    # "PQ": 1.0,
+    "CE": 1.0,
+    "CU": 1.0,
+    "PC": 0.0,
+    "PQ": 1.0,
     # "programs_iou": 3.0,
-    "programs_iou": 1.0,
-    "pam_avg": 1.0,
+    # "programs_iou": 1.0,
+    # "pam_avg": 1.0,
     # "clap_clf":1.0,
     # "clap":20.0
 }
@@ -72,53 +72,59 @@ REWARD_WEIGHTS = {
 prompt_pairs = [
     {
         "shorthand": "glitchless",
-        "positive": "A smooth, uninterrupted stream of music with seamless transitions and no audible digital artifacts.",
-        "negative": "An erratic, glitch-filled recording where audio cuts and pops interrupt the musical flow."
+        "positive": "A smooth and continuous texture with seamless transitions and stable audio playback.",
+        "negative": "A glitchy and unstable excerpt with digital artifacts, abrupt cuts, or dropouts."
     },
     {
         "shorthand": "expressive",
-        "positive": "A performance full of dynamic shifts, emotional phrasing, and subtle nuances like a skilled human performer.",
-        "negative": "A lifeless playback with flat dynamics and no emotional variation, like a mechanical piano roll."
+        "positive": "A dynamically rich excerpt with emotional phrasing, subtle articulations, and human-like nuance.",
+        "negative": "A flat and mechanical sequence with rigid articulation, even dynamics, and static energy."
     },
     {
         "shorthand": "naturalfeel",
-        "positive": "A flowing performance with human-like timing and expressive tempo changes, resembling a live ensemble.",
-        "negative": "Rigid, quantized rhythms that feel artificial and machine-generated, lacking any sense of performance."
+        "positive": "A fluid rhythmic feel with organic timing and slight expressive variations in phrasing.",
+        "negative": "A stiff and quantized rhythm with robotic timing and uniform note placements."
     },
     {
         "shorthand": "clarity",
-        "positive": "Each instrument sits clearly in the mix, with a balanced arrangement that allows the texture to breathe.",
-        "negative": "A cluttered wall of sound where instruments clash and details are buried in a muddy mix."
+        "positive": "A clean mix where each instrument is clearly defined and occupies its own space in the spectrum.",
+        "negative": "A muddy and crowded mix where sounds overlap and mask each other."
     },
     {
         "shorthand": "interest",
-        "positive": "A composition that unfolds with evolving ideas and engaging motifs that hold the listener's attention.",
-        "negative": "Repetitive and uninspired phrases that loop endlessly without development or variation."
+        "positive": "An engaging texture with subtle variations, rich timbres, and musical detail.",
+        "negative": "A dull sequence with static timbres and repetitive gestures that feel uninspired."
     },
     {
         "shorthand": "prosound",
-        "positive": "A polished and refined mix with high fidelity, smooth panning, and well-controlled dynamics, like a studio production.",
-        "negative": "An unbalanced mix with harsh frequencies and clumsy instrument blending, sounding like a demo or draft."
+        "positive": "A polished sound with balanced levels, clean frequency distribution, and professional-grade production.",
+        "negative": "A rough and uneven mix with harsh tones, poor balance, and lo-fi characteristics."
     },
     {
         "shorthand": "intent",
-        "positive": "A carefully structured piece where every phrase feels deliberate and musically purposeful.",
-        "negative": "Random, unfocused playing where sections seem thrown together without a clear sense of form."
+        "positive": "A focused excerpt with coherent phrasing and purposeful musical gestures.",
+        "negative": "An unfocused sequence with scattered gestures and unclear musical direction."
     },
     {
         "shorthand": "groove",
-        "positive": "A tight, rhythmically locked groove that makes the music feel alive and drives it forward with energy.",
-        "negative": "Loose and awkward timing that undermines the rhythm, making the piece feel unstable or hesitant."
+        "positive": "A tight rhythmic feel with strong pulse, clear subdivisions, and natural momentum.",
+        "negative": "An awkward rhythmic structure with imprecise timing and unstable pulse."
     },
     {
         "shorthand": "realism",
-        "positive": "Richly rendered instruments that emulate acoustic sources with convincing timbre and articulation.",
-        "negative": "Synthetic, plastic-sounding tones that clearly resemble low-quality MIDI instruments."
+        "positive": "Instruments that sound lifelike and expressive, with detailed articulation and natural tone.",
+        "negative": "Instruments that sound artificial and static, with generic tone and unrealistic behavior."
     },
+    {
+        "shorthand": "variation",
+        "positive": "A rich texture with contrasting articulations, subtle shifts, and sonic variety.",
+        "negative": "A uniform texture with repeated gestures and minimal sonic contrast."
+    }
 ]
 
+
 # get latest checkpoint
-OUTPUT_DIR = f"artefacts/all_runs/{MODEL}-{PROMPT_SOURCE}/pam-iou-{BETA}-{TEMPERATURE}"
+OUTPUT_DIR = f"artefacts/all_runs/{MODEL}-{PROMPT_SOURCE}/aes2-{BETA}-{TEMPERATURE}-{NUM_ITERATIONS}"
 
 SF_PATH= {
         "musescore": str(BuiltInSF3.MuseScoreGeneral().path(download=True)), 

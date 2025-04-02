@@ -79,7 +79,7 @@ plt.show()
 n_rewards = len(normalized_rewards)
 
 # show normalized_rewards_pam_avg in a scatter plot
-plt.scatter(logs["reward_step"], logs["normalized_rewards_pam_avg"], alpha=0.1)
+plt.scatter(logs["reward_step"], logs["normalized_rewards_pam_avg"], alpha=0.1, s=2)
 plt.legend()
 plt.show()
 # fit a line to the data
