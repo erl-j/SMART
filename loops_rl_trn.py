@@ -17,6 +17,10 @@ from symusic import dump_wav
 import random
 from processors import RewardManager, MidiTokToSymusicProcessor, TinySoundfontSynthProcessor, AudioBoxAesRewardProcessor, ProgramPromptAdherenceRewardProcessor, CLAPZeroShotClassificationRewardProcessor, PamRewardProcessor
 from loops_util import prepare_input
+import os
+import torch
+import pandas as pd
+from tqdm import tqdm
 #%%
 os.environ["WANDB_PROJECT"] = "music-grpo"  # name your W&B project
 os.environ["WANDB_LOG_MODEL"] = "false"
@@ -43,11 +47,11 @@ BETA = 0.04
 
 # MODEL = "piano" #"MIL"
 # PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
-MODEL = "mil"
-PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
+MODEL = "piano"
+PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
 SAVE_STEPS = 20
-N_EVAL_PROMPTS=100
+N_EVAL_PROMPTS=1000
 
 BATCH_SIZE=32 if MODEL == "mil" else 64
 
@@ -63,11 +67,12 @@ REWARD_WEIGHTS = {
     # "PC": 0.0,
     # "PQ": 1.0,
     # "programs_iou": 3.0,
-    "programs_iou": 1.0,
-    # "pam_avg": 1.0,
-    # "clap_clf":1.0,
-    # "clap":20.0
+    # "programs_iou": 1.0,
+    "pam_avg": 1.0,
 }
+
+# get latest checkpoint
+OUTPUT_DIR = f"artefacts/all_runs_2/{MODEL}-{PROMPT_SOURCE}/pam-{BETA}-{TEMPERATURE}-{NUM_TRAIN_STEPS}"
 
 prompt_pairs = [
     {
@@ -121,10 +126,6 @@ prompt_pairs = [
         "negative": "A uniform texture with repeated gestures and minimal sonic contrast."
     }
 ]
-
-
-# get latest checkpoint
-OUTPUT_DIR = f"artefacts/all_runs/{MODEL}-{PROMPT_SOURCE}/aes-iou-{BETA}-{TEMPERATURE}"
 
 # warn if output dir exists and may be overwritten
 if os.path.exists(OUTPUT_DIR):
@@ -339,16 +340,12 @@ dummy_tokenizer = DummyTokenizer(tokenizer)
 
 def evaluate_base_model(model, dataset, reward_manager, output_dir, batch_size=BATCH_SIZE):
     """Generate examples from base model and evaluate with reward function using batched inference"""
-    import os
-    import torch
-    import pandas as pd
-    from tqdm import tqdm
     
     os.makedirs(output_dir, exist_ok=True)
     
     model.eval()
     model.to("cuda")
-    all_results = []
+    all_records = []
 
     # rename prompt to text
     dataset = dataset.rename_column("prompt", "text")
@@ -372,7 +369,9 @@ def evaluate_base_model(model, dataset, reward_manager, output_dir, batch_size=B
                 temperature=TEMPERATURE,
                 pad_token_id=dummy_tokenizer.pad_token_id,
                 eos_token_id=dummy_tokenizer.eos_token_id,
+
             ).cpu()
+            completions = completions[:, batch["input_ids"].shape[1]:]  # remove prompt from completions
     
         # Evaluate the batch with reward function
         records = reward_manager(
@@ -384,13 +383,14 @@ def evaluate_base_model(model, dataset, reward_manager, output_dir, batch_size=B
         # replace idx in records with relative idx in dataset
         for record in records:
             record["idx"] = i + record["idx"]
-        reward_manager.export_records(records, save_audio=True, output_dir=output_dir + "/eval", step=0)
+        
+        # Append records to all_records
+        all_records.extend(records)
+    
+    reward_manager.export_records(all_records, save_audio=True, output_dir=output_dir + "/eval", step=0)
 
     # Save results
     print(f"Evaluation complete. Results saved to {output_dir}")
-    print(f"Total records: {len(all_results)}")
-    
-    return all_results
 
 evaluate_base_model(model, tst_ds, reward_manager, output_dir=OUTPUT_DIR + "/pre_eval", batch_size=BATCH_SIZE)
 reward_manager.reset()

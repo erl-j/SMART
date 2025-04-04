@@ -68,7 +68,7 @@ class RewardManager:
         if return_records:
             return records
         else:
-            self.export_records(records, save_audio=self.global_reward_step % self.audio_save_interval, output_dir=self.output_dir, step=self.global_reward_step) 
+            self.export_records(records, save_audio=(self.global_reward_step % self.audio_save_interval == 0), output_dir=self.output_dir, step=self.global_reward_step) 
             self.global_reward_step += 1
             return [record["reward"] for record in records]
 
@@ -230,10 +230,11 @@ class TinySoundfontSynthProcessor(Processor):
             Sample rate for audio rendering
         """
         # Initialize the synthesizer
+        self.soundfont_path = soundfont_path
         self.sample_rate = sample_rate
         self.synth = tinysoundfont.Synth(samplerate=self.sample_rate)
         # Load the soundfont
-        sfid = self.synth.sfload(soundfont_path)
+        sfid = self.synth.sfload(self.soundfont_path)
         # Create a sequencer
         self.max_duration_seconds = max_duration_seconds
     
@@ -255,10 +256,16 @@ class TinySoundfontSynthProcessor(Processor):
         """
         # Load the MIDI file
         self.synth.notes_off()
+        self.synth.sounds_off()
+
+        # flush the synth
+        dummy_buffer = self.synth.generate(4 * self.sample_rate)
+
+
         self.seq = tinysoundfont.Sequencer(self.synth)
         self.seq.midi_load(midi_path)
-        buffer_size = int(self.sample_rate * duration_seconds)
         # Generate audio buffer
+        buffer_size = int(self.sample_rate * duration_seconds)
         buffer = self.synth.generate(buffer_size)
         # Convert to numpy array
         block = np.frombuffer(bytes(buffer), dtype=np.float32)

@@ -4,9 +4,69 @@ import glob
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-
 # run_path = "artefacts/all_runs/mil-dataset/pam-iou-0.04-1-1"
-run_path = "artefacts/all_runs/piano-procedural/newpam-0.04-1-1"
+# /workspace/aestune/artefacts/all_runs/piano-procedural/aes-0.0-1-1k
+run_path = "artefacts/all_runs_2/mil-dataset/aes-0.04-1-10"
+#%%
+
+# load all logs
+prelogs = pd.read_parquet(run_path + "/pre_eval/eval/rl_logs/0/logs.parquet")
+print("Rows in pre eval: ", len(prelogs))
+
+# print prompt_and_completion_tokens
+print(prelogs["prompt_and_completion_tokens"].describe())
+
+
+# for every row print "prompt_and_completion_tokens"
+for i, row in prelogs.iterrows():
+    print(row["prompt_and_completion_tokens"])
+    # print(row["prompt_and_completion_tokens"]["prompt_tokens"])
+    # print(row["prompt_and_completion_tokens"]["completion_tokens"])
+    # print(row["prompt_and_completion_tokens"]["total_tokens"])
+
+import json
+# write first example to file
+with open("prompt_and_completion_tokens.json", "w") as f:
+    f.write(json.dumps(prelogs["prompt_and_completion_tokens"].iloc[0].tolist()))
+#%%
+postlogs = pd.read_parquet(run_path + "/post_eval/eval/rl_logs/0/logs.parquet")
+
+# add field to identify pre and post eval
+prelogs["system"] = "pre"
+postlogs["system"] = "post"
+
+# concat pre and post logs
+logs = pd.concat([prelogs, postlogs])
+
+# print how many rows
+print("Rows in post eval: ", len(postlogs))
+
+
+
+# for all columns that are dicts, expand them and prepend dict to the key as name
+for col in logs.columns:
+    if logs[col].apply(lambda x: isinstance(x, dict)).all():
+        logs = pd.concat([logs, logs[col].apply(pd.Series).add_prefix(col + "_")], axis=1)
+        logs.drop(col, axis=1, inplace=True)
+
+
+#%%
+# for each "normalized_rewards" column, plot the distribution for pre and post eval
+normalized_rewards = [col for col in logs.columns if "normalized_rewards" in col]
+for rew in normalized_rewards:
+    plt.figure()
+    for system in ["pre", "post"]:
+        plt.subplot(2, 1, 1 if system == "pre" else 2)
+        plt.hist(logs[logs["system"] == system][rew], bins=30, range=(0,1), alpha=0.5)
+        plt.title(f"{rew} - {system}")
+        plt.xlabel("reward")
+        plt.ylabel("count")
+    plt.show()
+
+
+#%%
+# plot average rewards for pre and post eval
+
 
 #%%
 
@@ -16,11 +76,6 @@ logs = [pd.read_parquet(log) for log in logs]
 logs = pd.concat(logs)
 
 
-# for all columns that are dicts, expand them and prepend dict to the key as name
-for col in logs.columns:
-    if logs[col].apply(lambda x: isinstance(x, dict)).all():
-        logs = pd.concat([logs, logs[col].apply(pd.Series).add_prefix(col + "_")], axis=1)
-        logs.drop(col, axis=1, inplace=True)
 
 
 # load all midi
