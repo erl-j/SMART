@@ -5,21 +5,14 @@ import torch
 from trl import GRPOConfig, GRPOTrainer
 from symusic import BuiltInSF3
 from datasets import Dataset, load_dataset
-from audiobox_aesthetics.infer import initialize_predictor
-import torch.nn.functional as F
 import os
-from util import crop_sm, sm_beats_per_second
-import tempfile
 from tqdm import tqdm
 import numpy as np
-import glob
-from symusic import dump_wav
 import random
-from processors import RewardManager, MidiTokToSymusicProcessor, TinySoundfontSynthProcessor, AudioBoxAesRewardProcessor, ProgramPromptAdherenceRewardProcessor, CLAPZeroShotClassificationRewardProcessor, PamRewardProcessor
+from processors import RewardManager, MidiTokToSymusicProcessor, TinySoundfontSynthProcessor, AudioBoxAesRewardProcessor, ProgramPromptAdherenceRewardProcessor, PamRewardProcessor
 from loops_util import prepare_input
 import os
 import torch
-import pandas as pd
 from tqdm import tqdm
 #%%
 os.environ["WANDB_PROJECT"] = "music-grpo"  # name your W&B project
@@ -39,16 +32,16 @@ TEMPERATURE = 1
 NUM_ITERATIONS = 1
 SCALE_REWARDS = True
 
-NUM_TRAIN_STEPS = 100
+NUM_TRAIN_STEPS = 1000
 LEARNING_RATE = 1e-4
 SEARCH_SAMPLING_PARAMS = False
 
-BETA = 0.04
+BETA = 0.16
 
 # MODEL = "piano" #"MIL"
 # PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
-MODEL = "piano"
-PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
+MODEL = "mil"
+PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
 SAVE_STEPS = 20
 N_EVAL_PROMPTS=1000
@@ -67,12 +60,12 @@ REWARD_WEIGHTS = {
     # "PC": 0.0,
     # "PQ": 1.0,
     # "programs_iou": 3.0,
-    # "programs_iou": 1.0,
+    "programs_iou": 1.0,
     "pam_avg": 1.0,
 }
 
 # get latest checkpoint
-OUTPUT_DIR = f"artefacts/all_runs_2/{MODEL}-{PROMPT_SOURCE}/pam-{BETA}-{TEMPERATURE}-{NUM_TRAIN_STEPS}"
+OUTPUT_DIR = f"artefacts/all_runs_2/{MODEL}-{PROMPT_SOURCE}/aes-{BETA}-{TEMPERATURE}-{NUM_TRAIN_STEPS}"
 
 prompt_pairs = [
     {
@@ -252,6 +245,13 @@ match MODEL:
                 def gen():
                     for i in range(N_PROMPTS):
                         yield {"prompt": [tokenizer.vocab["BOS_None"], tokenizer.vocab["Program_0"], tokenizer.vocab["Bar_None"], tokenizer.vocab["TimeSig_4/4"], tokenizer.vocab["Position_0"], np.random.choice(tempo_tokens)]}
+                trn_ds = Dataset.from_generator(gen)
+                tst_ds = Dataset.from_generator(gen).select(range(N_EVAL_PROMPTS))
+                max_prompt_length = len(trn_ds[0]["prompt"])
+            case "bass_drums":
+                def gen():
+                    for i in range(N_PROMPTS):
+                        yield {"prompt": [tokenizer.vocab["BOS_None"], tokenizer.vocab["Program_36"], tokenizer.vocab["Program_-1"], tokenizer.vocab["Bar_None"], tokenizer.vocab["TimeSig_4/4"], tokenizer.vocab["Position_0"], np.random.choice(tempo_tokens)]}
                 trn_ds = Dataset.from_generator(gen)
                 tst_ds = Dataset.from_generator(gen).select(range(N_EVAL_PROMPTS))
                 max_prompt_length = len(trn_ds[0]["prompt"])

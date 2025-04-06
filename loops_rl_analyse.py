@@ -3,65 +3,94 @@ import pandas as pd
 import glob
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-
-# run_path = "artefacts/all_runs/mil-dataset/pam-iou-0.04-1-1"
-# /workspace/aestune/artefacts/all_runs/piano-procedural/aes-0.0-1-1k
-run_path = "artefacts/all_runs_2/mil-dataset/aes-0.04-1-10"
+import symusic
+import muspy
+run_path = "artefacts/all_runs_2/piano-procedural/aes-0.04-1-100"
+# run_path = "artefacts/all_runs_2/mil-dataset/pam-iou-0.04-1-100"
 #%%
-
 # load all logs
 prelogs = pd.read_parquet(run_path + "/pre_eval/eval/rl_logs/0/logs.parquet")
 print("Rows in pre eval: ", len(prelogs))
 
-# print prompt_and_completion_tokens
-print(prelogs["prompt_and_completion_tokens"].describe())
-
-
-# for every row print "prompt_and_completion_tokens"
-for i, row in prelogs.iterrows():
-    print(row["prompt_and_completion_tokens"])
-    # print(row["prompt_and_completion_tokens"]["prompt_tokens"])
-    # print(row["prompt_and_completion_tokens"]["completion_tokens"])
-    # print(row["prompt_and_completion_tokens"]["total_tokens"])
-
-import json
-# write first example to file
-with open("prompt_and_completion_tokens.json", "w") as f:
-    f.write(json.dumps(prelogs["prompt_and_completion_tokens"].iloc[0].tolist()))
-#%%
+# print reward_weights
+reward_weights = prelogs["reward_weights"].iloc[0]
+print("Reward weights: ", reward_weights)
 postlogs = pd.read_parquet(run_path + "/post_eval/eval/rl_logs/0/logs.parquet")
-
 # add field to identify pre and post eval
-prelogs["system"] = "pre"
-postlogs["system"] = "post"
-
+prelogs["stage"] = "pre"
+postlogs["stage"] = "post"
 # concat pre and post logs
 logs = pd.concat([prelogs, postlogs])
-
-# print how many rows
-print("Rows in post eval: ", len(postlogs))
-
-
-
 # for all columns that are dicts, expand them and prepend dict to the key as name
 for col in logs.columns:
     if logs[col].apply(lambda x: isinstance(x, dict)).all():
         logs = pd.concat([logs, logs[col].apply(pd.Series).add_prefix(col + "_")], axis=1)
         logs.drop(col, axis=1, inplace=True)
 
+#%%
+
+midi = []
+for stage in ["pre", "post"]:
+    midi_paths = glob.glob( run_path + f"/{stage}_eval/eval/midi/0/*.mid", recursive=True)
+    # create records with 
+    midi.extend([{"midi_path": m, "reward_step": int(m.split("/")[-2].split("_")[0]), "idx" : int(m.split("_")[-1].replace(".mid","")), "stage": stage, "symusic" : symusic.Score(m), "muspy": muspy.read_midi(m) } for m in tqdm(midi_paths)])
+
+# join midi and logs on reward_step and idx
+midi_df = pd.DataFrame(midi)
+# join logs and midi on reward_step, stage and idx
+logs = logs.merge(midi_df, on=["reward_step", "idx", "stage"], how="inner")
 
 #%%
-# for each "normalized_rewards" column, plot the distribution for pre and post eval
+# compute metrics
+logs["metric_num_notes"] = logs["symusic"].apply(lambda x: x.note_num())
+logs["metric_pitch_class_entropy"] = logs["muspy"].apply(lambda x: muspy.pitch_class_entropy(x))
+logs["metric_polyphony"] = logs["muspy"].apply(lambda x: muspy.polyphony(x))
+logs["metric_polyphony_rate"] = logs["muspy"].apply(lambda x: muspy.polyphony_rate(x))
+logs["metric_scale_consistency"] = logs["muspy"].apply(lambda x: muspy.scale_consistency(x))
+logs["metric_empty_beat_rate"] = logs["muspy"].apply(lambda x: muspy.empty_beat_rate(x))
+
+# print mean for pre and post for each metric
+# get all columns that start with "metric_"
+metrics = [ col for col in logs.columns if col.startswith("metric_")]
+for metric in metrics:
+    print(f"{metric} pre: ", logs[logs["stage"] == "pre"][metric].mean())
+    print(f"{metric} post: ", logs[logs["stage"] == "post"][metric].mean())
+
+
+
+#%%
+# for each "normalized_rewards" column, plot the distribution for pre and post eval in a single histogram
 normalized_rewards = [col for col in logs.columns if "normalized_rewards" in col]
 for rew in normalized_rewards:
     plt.figure()
     for system in ["pre", "post"]:
-        plt.subplot(2, 1, 1 if system == "pre" else 2)
-        plt.hist(logs[logs["system"] == system][rew], bins=30, range=(0,1), alpha=0.5)
-        plt.title(f"{rew} - {system}")
-        plt.xlabel("reward")
-        plt.ylabel("count")
+        plt.hist(logs[logs["stage"] == system][rew], bins=50, alpha=0.5, label=system, range=(0, 1))
+    plt.title(rew)
+    plt.legend()
     plt.show()
+
+#%%
+
+# show distribution of num_notes for pre and post eval
+plt.figure()
+for system in ["pre", "post"]:
+    plt.hist(logs[logs["stage"] == system]["num_notes"], bins=50, alpha=0.5, label=system)
+plt.title("num_notes")
+plt.legend()
+plt.show()
+
+#%%
+
+import muspy
+
+
+plt.figure()
+for system in ["pre", "post"]:
+    plt.hist(logs[logs["stage"] == system]["pitch_class_entropy"], bins=50, alpha=0.5, label=system)
+plt.title("pitch_class_entropy")
+plt.legend()
+plt.show()
+#%%
 
 
 #%%
@@ -78,11 +107,7 @@ logs = pd.concat(logs)
 
 
 
-# load all midi
-midi_paths = glob.glob(run_path + "/midi/**/*.mid", recursive=True)
 
-# create records with 
-midi = [{"midi_path": m, "reward_step": int(m.split("/")[-2].split("_")[0]), "idx" : int(m.split("_")[-1].replace(".mid","")) } for m in tqdm(midi_paths)]
 
 # if normalized_rewards_programs_iou is missing, add it as 0
 if "normalized_rewards_programs_iou" not in logs.columns:
