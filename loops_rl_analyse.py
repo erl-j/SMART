@@ -464,7 +464,7 @@ import matplotlib.pyplot as plt
 sns.set(style="whitegrid")
 
 # Create a 4 split histograms for aes_scores_CE, aes_scores_CU, aes_scores_PC, aes_scores_PQ
-plt.figure(figsize=(12, 4))
+plt.figure(figsize=(16, 4))
 
 audiobox_full_names = {
     "CE" : "Content Enjoyment"
@@ -487,7 +487,10 @@ for i, rew in enumerate(["aes_scores_CE", "aes_scores_CU", "aes_scores_PC", "aes
     plt.ylabel("Number of Tracks")
     plt.grid(False)
     plt.tight_layout()
-    ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True, nbins=3))  # Reduced number of y-ticks
+    # .yaxis.set_major_locator(plt.MaxNLocator(integer=True, nbins=3))  # Reduced number of y-ticks
+    # now reduce the number of ticks on the y axis to 5
+    plt.gca().yaxis.set_major_locator(plt.MaxNLocator(nbins=4))
+
 
 plt.savefig('aes_scores_comparison.pdf', dpi=300, bbox_inches='tight')
 plt.show()

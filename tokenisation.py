@@ -93,6 +93,274 @@ class IRMATokenizerConfig(TokenizerConfig):
         return {k: str(v) for k, v in asdict(self).items()}
     
 
+@dataclass
+class TanjaTokenizerConfig(TokenizerConfig):
+    ticks_per_beat: int
+    coarse_ticks_per_beat: int
+    tempo_range: Tuple[int, int]
+    n_tempo_bins: int
+    n_velocity_bins: int
+    n_bars : int
+    n_events : int
+    
+    def dict(self):
+        return {k: str(v) for k, v in asdict(self).items()}
+    
+class TanjaTokenizer(BaseTokenizer):
+
+    '''
+    CMLM Tokenizer.
+    This tokenizer outputs a list of tokens in the following format:
+    # First tempo is provided.
+    Tempo
+    # Then for each note we have 7 attributes.
+    Program Pitch OnsetCoarse OnsetFine Offset Duration Velocity
+    # There is also a mask token
+    '''
+
+    def __init__(self, config: TanjaTokenizerConfig):
+
+        self.config = config
+        self.vocab = []
+
+
+        self.n_beats = config.n_bars * 4
+
+        # add MASK_None token
+        self.vocab.append("MASK_None")
+
+        # add SEP_None token
+        self.vocab.append("SEP_None")
+
+        # first create tempo quantizer
+        self.tempo_quantizer = Quantizer(
+            config.tempo_range, config.n_tempo_bins, round_values=True
+        )
+        # add tempo tokens
+        self.vocab.extend(f"Tempo_{tempo}" for tempo in self.tempo_quantizer.bins)
+
+        # now add program tokens
+        for i in range(128):
+            self.vocab.append(f"Program_{i}")
+
+        # add program for drums
+        self.vocab.append(f"Program_Drums")
+
+        # add inactive state for program
+        self.vocab.append(f"Program_inactive")
+
+        # now add pitch tokens
+        self.vocab.extend(f"Pitch_{pitch}" for pitch in range(128))
+
+        # add pitch tokens for drums
+        self.vocab.extend(f"Pitch_Drum{pitch}" for pitch in range(128))
+
+        # add inactive state for pitch
+        self.vocab.append(f"Pitch_inactive")
+
+        # now add coarse onset tokens
+        self.vocab.extend(f"Onset_{i}" for i in range(self.n_beats * self.config.ticks_per_beat // config.coarse_ticks_per_beat))
+        # add inactive state for onset
+        self.vocab.append(f"Onset_inactive")
+
+        # add onset micro
+        self.vocab.extend(f"OnsetMicro_{i}" for i in range(self.config.coarse_ticks_per_beat))
+        # add inactive state for onset micro
+        self.vocab.append(f"OnsetMicro_inactive")
+
+        # now add offset tokens
+        self.vocab.extend(f"Offset_{i}" for i in range(self.n_beats * self.config.ticks_per_beat // config.coarse_ticks_per_beat))
+        # add inactive state for offset
+        self.vocab.append(f"Offset_inactive")
+
+        # now add duration tokens
+        # we use fractions from 1/32 to 4/1, in powers of 2
+        # 32 ticks
+        thirtysecond_ticks = (self.config.ticks_per_beat * 4) // 32
+        fourbar_ticks = (self.config.ticks_per_beat * self.n_beats)
+
+        ticks = thirtysecond_ticks
+        while ticks <= fourbar_ticks:
+            # add duration token
+            self.vocab.append(f"Duration_{ticks}")
+            # multiply by 2
+            ticks *= 2
+
+        self.durations = [int(t.split("_")[-1]) for t in self.vocab if t.startswith("Duration_")]
+        
+        # add inactive state for duration
+        self.vocab.append(f"Duration_inactive")
+        
+        # then create velocity quantizer
+        self.velocity_quantizer = Quantizer(
+            (1, 127), config.n_velocity_bins, round_values=True
+        )
+        # add velocity tokens
+        self.vocab.extend(f"Velocity_{v}" for v in self.velocity_quantizer.bins)
+        # add inactive state for velocity
+        self.vocab.append(f"Velocity_inactive")
+
+        self.event_attribute_order = [
+            "Program",
+            "Pitch",
+            "OnsetMicro",
+            "OnsetFine",
+            "Offset",
+            "Duration",
+            "Velocity",
+        ]
+
+    def get_inactive_note_tokens(self):
+        # get inactive note attributes
+        program_token = f"Program_inactive"
+        pitch_token = f"Pitch_inactive"
+        onset_coarse_token = f"Onset_inactive"
+        onset_fine_token = f"OnsetMicro_inactive"
+        offset_token = f"Offset_inactive"
+        duration_token = f"Duration_inactive"
+        velocity_token = f"Velocity_inactive"
+        # create note dict
+        return [program_token, pitch_token, onset_coarse_token, onset_fine_token, offset_token, duration_token, velocity_token]
+
+
+    def get_note_tokens(self, note, program, is_drums):
+        # get note attributes
+        program_token = f"Program_{program}" if not is_drums else f"Program_Drums"
+        pitch_token = f"Pitch_{note.pitch}" if not is_drums else f"Pitch_Drum{note.pitch}"
+        onset_coarse_token = f"Onset_{int(note.start // self.config.coarse_ticks_per_beat)}"
+        onset_fine_token = f"OnsetMicro_{int(note.start % self.config.coarse_ticks_per_beat)}"
+        offset_token = f"Offset_{int(note.end // self.config.coarse_ticks_per_beat)}"
+        duration_token = f"Duration_{min(self.durations, key=lambda x: abs(x - note.end + note.start))}"
+        velocity_token = f"Velocity_{self.velocity_quantizer.quantize(note.velocity)}"
+        # create note dict
+        return [program_token, pitch_token, onset_coarse_token, onset_fine_token, offset_token, duration_token, velocity_token]
+
+    def midi_to_tokens(self, midi, shuffle_events=True):
+        # first resample the midi to the ticks per beat
+        midi = midi.copy().resample(self.config.ticks_per_beat)
+        # assert that the time signature is 4/4
+        time_signature = midi.time_signatures[-1]
+        if time_signature.numerator != 4 or time_signature.denominator != 4:
+            raise ValueError(
+                "Only 4/4 time signature is supported for Tanja tokenizer."
+            )
+        # get tempo
+        tempo = midi.tempos[-1].qpm if len(midi.tempos) > 0 else 120
+        # quantize tempo
+        tempo_token = f"Tempo_{self.tempo_quantizer.quantize(tempo)}"
+        note_tokens = []
+        for track in midi.tracks:
+            is_drums = track.is_drum
+            program_nr = track.program
+            for note in track.notes:
+                # get note attributes
+                note_tokens.append(self.get_note_tokens(note, program_nr, is_drums))
+        # shuffle note tokens
+        # we'll 
+        n_inactive_notes = self.config.n_events - len(note_tokens)
+        # add inactive notes
+        for i in range(n_inactive_notes):
+            note_tokens.append(self.get_inactive_note_tokens())
+        if shuffle_events:
+            note_tokens = random.sample(note_tokens, len(note_tokens))
+
+        def flatten(lst):
+            return [item for sublist in lst for item in sublist]
+        # now we have the note tokens, we can create the final token list
+        tokens = [tempo_token, *flatten(note_tokens)]
+        return tokens
+    
+    def tokens_to_midi(self, tokens):
+        # create score
+        midi = symusic.Score()
+
+        # set tempo
+        tempo_token = tokens.pop(0)
+        tempo = int(tempo_token.split("_")[-1])
+        midi.tempos = [symusic.Tempo(qpm=tempo, time=0)]
+
+        # set time signature
+        midi.time_signatures.append(symusic.TimeSignature(numerator=4, denominator=4, time=0))
+
+        program_notes = {}
+
+        while len(tokens) > 0:
+            # pop len(self.event_attribute_order) tokens
+            note_tokens = tokens[:len(self.event_attribute_order)]
+            tokens = tokens[len(self.event_attribute_order):]
+
+            # get note attributes
+            program_token = note_tokens[0]
+            # assert that this is a program token
+            assert program_token.startswith("Program_"), "First token must be a program token"
+            program_str = program_token.split("_")[-1]
+            if program_str == "inactive":
+                continue
+            program = int(program_str) if program_str != "Drums" else -1
+            is_drum = program_str == "Drums"
+            pitch_token = note_tokens[1]
+            # assert that this is a pitch token
+            assert pitch_token.startswith("Pitch_"), "Second token must be a pitch token"
+            pitch_str = pitch_token.split("_")[-1]
+            pitch = int(pitch_str) if "Drum" not in pitch_str else int(pitch_str.split("Drum")[-1])
+            # get onset coarse token
+            onset_coarse_token = note_tokens[2]
+            # assert that this is a onset token
+            assert onset_coarse_token.startswith("Onset_"), "Third token must be an onset token"
+            onset_coarse_str = onset_coarse_token.split("_")[-1]
+            onset_coarse = int(onset_coarse_str)
+            # get onset fine token
+            onset_fine_token = note_tokens[3]
+            # assert that this is a onset token
+            assert onset_fine_token.startswith("OnsetMicro_"), "Fourth token must be an onset token"
+            onset_fine_str = onset_fine_token.split("_")[-1]
+            onset_fine = int(onset_fine_str)
+            # get offset token
+            offset_token = note_tokens[4]
+            # assert that this is a offset token
+            assert offset_token.startswith("Offset_"), "Fifth token must be an offset token"
+            offset_str = offset_token.split("_")[-1]
+            offset = int(offset_str)
+            # get duration token
+            duration_token = note_tokens[5]
+            # assert that this is a duration token
+            assert duration_token.startswith("Duration_"), "Sixth token must be a duration token"
+            duration_str = duration_token.split("_")[-1]
+            duration = int(duration_str)
+            # get velocity token
+            velocity_token = note_tokens[6]
+            # assert that this is a velocity token
+            assert velocity_token.startswith("Velocity_"), "Seventh token must be a velocity token"
+            velocity_str = velocity_token.split("_")[-1]
+            velocity = int(velocity_str)
+            # create note
+            if program not in program_notes:
+                program_notes[program] = []
+            
+            program_notes[program].append(
+                symusic.Note(
+                    time=onset_coarse * self.config.coarse_ticks_per_beat + onset_fine,
+                    pitch=pitch,
+                    velocity=velocity,
+                    duration = max((offset * self.config.coarse_ticks_per_beat + onset_fine) - (onset_coarse * self.config.coarse_ticks_per_beat + onset_fine),1),
+                )
+            )
+        # now sort programs by program number
+        program_notes = sorted(program_notes.items(), key=lambda x: x[0])
+        # sort program notes by start time, end time, pitch, velocity
+        for program, notes in program_notes:
+            notes.sort(key=lambda note: (note.start, note.end, note.pitch, note.velocity))
+        # now create tracks for each program
+        for program, notes in program_notes:
+            # create a new track
+            track = symusic.Track(is_drum=program == -1, program=program if program != -1 else 0)
+            # add notes to track
+            for note in notes:
+                track.notes.append(note)
+            # add track to midi
+            midi.tracks.append(track)
+        return midi    
+
 # header
 # Tempo_120 Program_Drums Program_1 Program_34 Program_1 Track_None Bar_None Position_0 Offset_2 Pitch_Drum:60 Velocity ... Track_None Bar_None Postion_0 Offset_2 Pitch_60 Velocity_100 Duration_46 ... ... Track_None   
 
