@@ -5,7 +5,8 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import symusic
 import muspy
-run_path = "artefacts/all_runs_2/piano-procedural/aes-0.04-1-100"
+# run_path = "artefacts/all_runs_2/piano-procedural/aes-0.04-1-100"
+run_path = "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-0.04-1-200/"
 # run_path = "artefacts/all_runs_2/mil-dataset/pam-iou-0.04-1-100"
 #%%
 # load all logs
@@ -41,21 +42,159 @@ midi_df = pd.DataFrame(midi)
 logs = logs.merge(midi_df, on=["reward_step", "idx", "stage"], how="inner")
 
 #%%
-# compute metrics
-logs["metric_num_notes"] = logs["symusic"].apply(lambda x: x.note_num())
-logs["metric_pitch_class_entropy"] = logs["muspy"].apply(lambda x: muspy.pitch_class_entropy(x))
-logs["metric_polyphony"] = logs["muspy"].apply(lambda x: muspy.polyphony(x))
-logs["metric_polyphony_rate"] = logs["muspy"].apply(lambda x: muspy.polyphony_rate(x))
-logs["metric_scale_consistency"] = logs["muspy"].apply(lambda x: muspy.scale_consistency(x))
-logs["metric_empty_beat_rate"] = logs["muspy"].apply(lambda x: muspy.empty_beat_rate(x))
 
-# print mean for pre and post for each metric
-# get all columns that start with "metric_"
+
+def get_pitches(sm):
+    pitches = []
+    for track in sm.tracks:
+        for note in track.notes:
+            pitches.append(note.pitch)
+    return pitches
+
+def get_interonset_ticks(sm):
+    all_interonset_ticks = []
+    for track in sm.tracks:
+        if len(track.notes) <= 1:
+            continue
+        # Sort notes by start time to ensure correct interonset calculation
+        sorted_notes = sorted(track.notes, key=lambda x: x.start)
+        for note_idx in range(len(sorted_notes) - 1):
+            # Get the current note
+            note = sorted_notes[note_idx]
+            # Get the next note
+            next_note = sorted_notes[note_idx + 1]
+            # Calculate the interonset time in ticks
+            interonset_time = next_note.start - note.start
+            # Append to the list
+            all_interonset_ticks.append(interonset_time)
+    return all_interonset_ticks
+
+def get_note_durations(sm):
+    note_durations = []
+    for track in sm.tracks:
+        for note in track.notes:
+            note_durations.append(note.end - note.start)
+    return note_durations
+
+def get_intervals(sm):
+    all_intervals = []
+    for track in sm.tracks:
+        if len(track.notes) <= 1:
+            continue
+        # Sort notes by start time to ensure meaningful intervals
+        sorted_notes = sorted(track.notes, key=lambda x: x.start)
+        for note_idx in range(len(sorted_notes) - 1):
+            # Get the current note
+            note = sorted_notes[note_idx]
+            # Get the next note
+            next_note = sorted_notes[note_idx + 1]
+            # Calculate the interval in semitones
+            interval = next_note.pitch - note.pitch
+            # Append to the list
+            all_intervals.append(interval)
+    return all_intervals
+
+def get_velocities(sm):
+    velocities = []
+    for track in sm.tracks:
+        for note in track.notes:
+            velocities.append(note.velocity)
+    return velocities
+
+def get_dynamic_range(sm):
+    velocities = get_velocities(sm)
+    if not velocities:  # Check if the list is empty
+        return 0
+    return max(velocities) - min(velocities)
+
+def get_number_of_notes(sm):
+    total_notes = 0
+    for track in sm.tracks:
+        total_notes += len(track.notes)
+    return total_notes
+
+def get_number_of_tempo_changes(sm):
+    return len(sm.tempos)
+
+def get_number_of_time_signature_changes(sm):
+    return len(sm.time_signatures)
+
+def get_duration_in_seconds(sm):
+    sm = sm.to(symusic.TimeUnit("second"))
+    return sm.end()
+
+
+import numpy as np
+# Helper function to try a calculation and return NaN if it fails
+def try_or_nan(func):
+    try:
+        return func()
+    except Exception:
+        return np.nan
+
+# compute metrics with error handling
+logs["metric_num_notes"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: x.note_num()))
+logs["metric_pitch_class_entropy"] = logs["muspy"].apply(lambda x: try_or_nan(lambda: muspy.pitch_class_entropy(x)))
+logs["metric_polyphony"] = logs["muspy"].apply(lambda x: try_or_nan(lambda: muspy.polyphony(x)))
+logs["metric_polyphony_rate"] = logs["muspy"].apply(lambda x: try_or_nan(lambda: muspy.polyphony_rate(x)))
+logs["metric_scale_consistency"] = logs["muspy"].apply(lambda x: try_or_nan(lambda: muspy.scale_consistency(x)))
+logs["metric_empty_beat_rate"] = logs["muspy"].apply(lambda x: try_or_nan(lambda: muspy.empty_beat_rate(x)))
+
+logs["fts_pitches"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: get_pitches(x)))
+logs["fts_interonset_ticks"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: get_interonset_ticks(x)))
+logs["fts_note_durations"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: get_note_durations(x)))
+logs["fts_intervals"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: get_intervals(x)))
+logs["fts_velocities"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: get_velocities(x)))
+
+logs["ft_dynamic_range"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: get_dynamic_range(x)))
+logs["ft_number_of_notes"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: get_number_of_notes(x)))
+logs["ft_number_of_tempo_changes"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: get_number_of_tempo_changes(x)))
+logs["ft_number_of_time_signature_changes"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: get_number_of_time_signature_changes(x)))
+logs["ft_duration_in_seconds"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: get_duration_in_seconds(x)))
+
+
+#%%
+# get distribution of each metric, find metrics by picking columns that start with "metric_"
 metrics = [ col for col in logs.columns if col.startswith("metric_")]
-for metric in metrics:
-    print(f"{metric} pre: ", logs[logs["stage"] == "pre"][metric].mean())
-    print(f"{metric} post: ", logs[logs["stage"] == "post"][metric].mean())
 
+for metric in metrics:
+    plt.figure()
+    for system in ["pre", "post"]:
+        plt.hist(logs[logs["stage"] == system][metric], bins=50, alpha=0.5, label=system)
+    plt.title(metric)
+    plt.legend()
+    plt.show()
+
+#%%
+
+fts = [ col for col in logs.columns if col.startswith("fts_")]
+# these first have to be aggregated by joining all lists 
+for fts_col in fts:
+    # now we can plot the distribution
+    plt.figure()
+    for system in ["pre", "post"]:
+        # aggregate the lists into a single list
+        all_values = []
+        for values in logs[logs["stage"] == system][fts_col]:
+            all_values.extend(values)
+        plt.hist(all_values, bins=50, alpha=0.5, label=system)
+    plt.title(fts_col)
+    plt.legend()
+    plt.show()
+
+
+#%%
+
+ft = [col for col in logs.columns if col.startswith("ft_")]
+# now plot the distribution of of the ft
+# for each column that starts with "ft_" in a single plot. these do not need to be aggregated
+for ft_col in ft:
+    plt.figure()
+    for system in ["pre", "post"]:
+        plt.hist(logs[logs["stage"] == system][ft_col], bins=50, alpha=0.5, label=system)
+    plt.title(ft_col)
+    plt.legend()
+    plt.show()
 
 
 #%%
@@ -69,15 +208,7 @@ for rew in normalized_rewards:
     plt.legend()
     plt.show()
 
-#%%
 
-# show distribution of num_notes for pre and post eval
-plt.figure()
-for system in ["pre", "post"]:
-    plt.hist(logs[logs["stage"] == system]["num_notes"], bins=50, alpha=0.5, label=system)
-plt.title("num_notes")
-plt.legend()
-plt.show()
 
 #%%
 

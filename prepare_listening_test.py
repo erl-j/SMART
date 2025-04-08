@@ -6,16 +6,20 @@ import matplotlib.pyplot as plt
 import symusic
 import muspy
 # run_path = "artefacts/all_runs_2/piano-procedural/aes-0.04-1-100"
-run_path = "artefacts/all_runs_2/mil-bass_drums_keys/aes-0.04-1-100"
 # run_path = "artefacts/all_runs_2/mil-dataset/pam-iou-0.04-1-100"
 # load all logs
-prelogs = pd.read_parquet(run_path + "/pre_eval/eval/rl_logs/0/logs.parquet")
+
+
+pre_run = "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-0.04-1-200/pre_eval/eval/"
+post_run = "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-0.04-1-200/post_eval/eval/"
+
+prelogs = pd.read_parquet(f"{pre_run}/rl_logs/0/logs.parquet")
 print("Rows in pre eval: ", len(prelogs))
 
 # print reward_weights
 reward_weights = prelogs["reward_weights"].iloc[0]
 print("Reward weights: ", reward_weights)
-postlogs = pd.read_parquet(run_path + "/post_eval/eval/rl_logs/0/logs.parquet")
+postlogs = pd.read_parquet(f"{post_run}/rl_logs/0/logs.parquet")
 # add field to identify pre and post eval
 prelogs["stage"] = "pre"
 postlogs["stage"] = "post"
@@ -28,8 +32,8 @@ for col in logs.columns:
         logs.drop(col, axis=1, inplace=True)
 
 
-pre_audio_paths = glob.glob(run_path + "/pre_eval/eval/audio/0/*.wav", recursive=True)
-post_audio_paths = glob.glob(run_path + "/post_eval/eval/audio/0/*.wav", recursive=True)
+pre_audio_paths = glob.glob(f"{pre_run}/audio/0/*.wav", recursive=True)
+post_audio_paths =  glob.glob(f"{post_run}/audio/0/*.wav", recursive=True)
 
 # create dict of audio paths with stage and idx
 audio_paths = []
@@ -68,11 +72,13 @@ import torchaudio
 import random
 from IPython.display import Audio, display, HTML
 import matplotlib.pyplot as plt
+from IPython.display import clear_output
+from time import sleep
 
 print(len(logs))
 
 # Set up the test
-NUM_COMPARISONS = 10
+NUM_COMPARISONS = 20
 test_results = []
 
 # Prepare data
@@ -121,6 +127,7 @@ for i, idx in enumerate(selected_indices):
     display(Audio(audio_a.numpy(), rate=sr_a))
     print("Sample B:")
     display(Audio(audio_b.numpy(), rate=sr_b))
+    sleep(1)  # Pause for 5 seconds to allow listening
     
     # User needs to manually enter their choice at this point
     choice = input("Which sample do you prefer? (A/B): ")
@@ -130,6 +137,9 @@ for i, idx in enumerate(selected_indices):
     # Save the choice
     comparison_data[i]['choice'] = choice.upper()
     print()
+
+    # clear ipython output
+    clear_output(wait=True)
 
 # Calculate results
 pre_preferred = 0
@@ -195,4 +205,28 @@ for result in comparison_data:
 
 print("Detailed Results:")
 print(pd.DataFrame(results_table))
+# %%
+
+# for 10 first indices show a and b audio side by side
+for i, idx in enumerate(selected_indices[:10]):
+    # Get pre and post samples for this index
+    pre_sample = logs[(logs['idx'] == idx) & (logs['stage'] == 'pre')].iloc[0]
+    post_sample = logs[(logs['idx'] == idx) & (logs['stage'] == 'post')].iloc[0]
+    
+    # Randomly assign to A and B
+    is_a_pre = True
+    sample_a = pre_sample if is_a_pre else post_sample
+    sample_b = post_sample if is_a_pre else pre_sample
+    
+    # Load the audio
+    audio_a, sr_a = torchaudio.load(sample_a['audio_path'])
+    audio_b, sr_b = torchaudio.load(sample_b['audio_path'])
+    
+    # Display the comparison
+    print(f"Comparison {i+1} of {NUM_COMPARISONS} (Index: {idx})")
+    print("Sample A:")
+    display(Audio(audio_a.numpy(), rate=sr_a))
+    print("Sample B:")
+    display(Audio(audio_b.numpy(), rate=sr_b))
+    print()
 # %%

@@ -2,7 +2,7 @@
 import transformers
 import miditok
 
-domain = "piano"
+domain = "mil"
 
 match domain:
     case "mil":
@@ -20,13 +20,18 @@ match domain:
     case "piano":
         # load model 
         ckpt_path = "artefacts/all_runs_2/piano-procedural/aes-0.04-1-100/checkpoint-100"
-        TOKENIZER_CONFIG_PATH = "data/tokenizer_config.json"
+        model = transformers.AutoModelForCausalLM.from_pretrained(ckpt_path)
 
-        # load model
+        miditok_tokenizer = miditok.REMI.from_pretrained("lucacasini/metamidipianophi3_6L")
+
+    case "piano-long":
+        # load model 
+        ckpt_path = "artefacts/all_runs_2/piano-long-procedural/aes-0.04-1-100/checkpoint-100"
         model = transformers.AutoModelForCausalLM.from_pretrained(ckpt_path)
 
         # load tokenizer
-        miditok_tokenizer = miditok.REMI.from_pretrained("lucacasini/metamidipianophi3_6L")
+        miditok_tokenizer = miditok.REMI.from_pretrained("lucacasini/metamidipianophi3_6L_long")
+
 
 #%%
 
@@ -47,12 +52,9 @@ hf_tokenizer = transformers.PreTrainedTokenizerFast(
     sep_token="SEP_None",
 )
 
-
 print("Tokenizer vocab size: ", hf_tokenizer.vocab_size)
 
 test_input = "BOS_None Program_0"
-
-
 
 outpath = "demo/model"
 model.save_pretrained(outpath)
@@ -60,15 +62,5 @@ hf_tokenizer.save_pretrained(outpath)
 # save tokenizer
 
 #%%
-# load tokenizer 
-from transformers import AutoTokenizer
-
-tokenizer = AutoTokenizer.from_pretrained(outpath)
-# check vocab size
-print("Tokenizer vocab size: ", tokenizer.vocab_size)
-
-print(tokenizer.encode("BOS_None"))
-
-
 
 # %%

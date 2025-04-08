@@ -36,17 +36,19 @@ NUM_TRAIN_STEPS = 1000
 LEARNING_RATE = 1e-4
 SEARCH_SAMPLING_PARAMS = False
 
-BETA = 0.16
+BETA = 0.04
 
 # MODEL = "piano" #"MIL"
 # PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
+# MODEL = "piano-4l"
+# PROMPT_SOURCE = "procedural-no-starting-note" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 MODEL = "mil"
 PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
 SAVE_STEPS = 20
 N_EVAL_PROMPTS=1000
 
-BATCH_SIZE=32 if MODEL == "mil" else 64
+BATCH_SIZE=64 if MODEL == "piano" else 32
 
 
 N_PROMPTS = (NUM_TRAIN_STEPS * BATCH_SIZE // NUM_GENERATIONS) * 10
@@ -55,17 +57,17 @@ SAMPLE_RATE = 48_000
 SOUNDFONT = "matrix" if MODEL == "mil" else "yamaha"
 
 REWARD_WEIGHTS = {
-    # "CE": 1.0,
+    "CE": 1.0,
     # "CU": 1.0,
     # "PC": 0.0,
     # "PQ": 1.0,
     # "programs_iou": 3.0,
     "programs_iou": 1.0,
-    "pam_avg": 1.0,
+    # "pam_avg": 1.0,
 }
 
 # get latest checkpoint
-OUTPUT_DIR = f"artefacts/all_runs_2/{MODEL}-{PROMPT_SOURCE}/aes-{BETA}-{TEMPERATURE}-{NUM_TRAIN_STEPS}"
+OUTPUT_DIR = f"artefacts/all_runs_3/{MODEL}-{PROMPT_SOURCE}/aes-ce-{BETA}-{TEMPERATURE}-{NUM_TRAIN_STEPS}"
 
 prompt_pairs = [
     {
@@ -128,6 +130,7 @@ if os.path.exists(OUTPUT_DIR):
     if response != "yes":
         raise ValueError("Aborted by user.")
 else:
+    # remove the output dir if it exists
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 SF_PATH= {
@@ -152,6 +155,129 @@ SF_PATH= {
             }[SOUNDFONT]
 
 match MODEL:
+
+    case "piano-long":
+        MAX_COMPLETION_LENGTH = 2048
+        MAX_BEATS = 512
+        MAX_AUDIO_DURATION = 32
+
+        # BASE_MODEL_PATH = "lucacasini/metamidipianophi3"
+        BASE_MODEL_PATH = "lucacasini/metamidipianophi3_6L_long"
+        model = transformers.AutoModelForCausalLM.from_pretrained(BASE_MODEL_PATH, trust_remote_code=True, torch_dtype="auto")
+        tokenizer = miditok.REMI.from_pretrained(BASE_MODEL_PATH)
+        bar_token = tokenizer.vocab["Bar_None"]
+        position_zero_token = tokenizer.vocab["Position_0"]
+        timesignature_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("TimeSig_")]
+        tempo_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Tempo_")]
+        pitch_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Pitch_")]
+        velocity_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Velocity_")]
+        duration_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Duration_")]
+
+        match PROMPT_SOURCE:
+            case "procedural":
+                def gen():
+                    for i in range(N_PROMPTS):
+                        yield {"prompt": [bar_token, 
+                                        random.choice(timesignature_tokens), 
+                                        position_zero_token, 
+                                        random.choice(tempo_tokens), 
+                                        random.choice(pitch_tokens), 
+                                        random.choice(velocity_tokens),
+                                        random.choice(duration_tokens)]
+                            }
+                trn_ds = Dataset.from_generator(gen)
+                tst_ds = Dataset.from_generator(gen).select(range(N_EVAL_PROMPTS))
+                max_prompt_length = len(trn_ds[0]["prompt"])
+            case "no prompt":
+                def gen():
+                    for i in range(N_PROMPTS):
+                        yield {"prompt": [tokenizer.vocab["BOS_None"]]}
+                trn_ds = Dataset.from_generator(gen)
+                tst_ds = Dataset.from_generator(gen).select(range(N_EVAL_PROMPTS))
+                max_prompt_length = len(trn_ds[0]["prompt"])
+            case _:
+                raise ValueError("Invalid prompt source for piano model")
+            
+        reward_manager = RewardManager(
+            processors = [
+                MidiTokToSymusicProcessor(tokenizer, is_multitrack=False, max_beats=100),
+                TinySoundfontSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
+                AudioBoxAesRewardProcessor(),
+                # CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["dissonant, low quality, caucophonous music, glitch, midi"], target_prompt="beautiful, high quality, amazing music, natural, calming", temperature=0.25),
+                PamRewardProcessor(sample_rate=SAMPLE_RATE, prompt_configs=prompt_pairs,temperature=0.25)
+            ],
+            reward_weights = REWARD_WEIGHTS,
+            output_dir=OUTPUT_DIR
+        )
+
+
+    case "piano-4l":
+
+        MAX_COMPLETION_LENGTH = 256
+        MAX_BEATS = 64
+        MAX_AUDIO_DURATION = 10
+
+        # BASE_MODEL_PATH = "lucacasini/metamidipianophi3"
+        BASE_MODEL_PATH = "lucacasini/metamidipianophi3_4L"
+        model = transformers.AutoModelForCausalLM.from_pretrained(BASE_MODEL_PATH, trust_remote_code=True, torch_dtype="auto")
+        tokenizer = miditok.REMI.from_pretrained(BASE_MODEL_PATH)
+        bar_token = tokenizer.vocab["Bar_None"]
+        position_zero_token = tokenizer.vocab["Position_0"]
+        timesignature_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("TimeSig_")]
+        tempo_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Tempo_")]
+        pitch_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Pitch_")]
+        velocity_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Velocity_")]
+        duration_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Duration_")]
+
+        match PROMPT_SOURCE:
+            case "procedural":
+                def gen():
+                    for i in range(N_PROMPTS):
+                        yield {"prompt": [bar_token, 
+                                        random.choice(timesignature_tokens), 
+                                        position_zero_token, 
+                                        random.choice(tempo_tokens), 
+                                        random.choice(pitch_tokens), 
+                                        random.choice(velocity_tokens),
+                                        random.choice(duration_tokens)]
+                            }
+                trn_ds = Dataset.from_generator(gen)
+                tst_ds = Dataset.from_generator(gen).select(range(N_EVAL_PROMPTS))
+                max_prompt_length = len(trn_ds[0]["prompt"])
+            case "procedural-no-starting-note":
+                def gen():
+                    for i in range(N_PROMPTS):
+                        yield {"prompt": [bar_token, 
+                                        random.choice(timesignature_tokens), 
+                                        position_zero_token, 
+                                        random.choice(tempo_tokens), 
+                                        ]
+                            }
+                trn_ds = Dataset.from_generator(gen)
+                tst_ds = Dataset.from_generator(gen).select(range(N_EVAL_PROMPTS))
+                max_prompt_length = len(trn_ds[0]["prompt"])
+            case "no prompt":
+                def gen():
+                    for i in range(N_PROMPTS):
+                        yield {"prompt": [tokenizer.vocab["BOS_None"]]}
+                trn_ds = Dataset.from_generator(gen)
+                tst_ds = Dataset.from_generator(gen).select(range(N_EVAL_PROMPTS))
+                max_prompt_length = len(trn_ds[0]["prompt"])
+            case _:
+                raise ValueError("Invalid prompt source for piano model")
+            
+        reward_manager = RewardManager(
+            processors = [
+                MidiTokToSymusicProcessor(tokenizer, is_multitrack=False, max_beats=100),
+                TinySoundfontSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
+                AudioBoxAesRewardProcessor(),
+                # CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["dissonant, low quality, caucophonous music, glitch, midi"], target_prompt="beautiful, high quality, amazing music, natural, calming", temperature=0.25),
+                PamRewardProcessor(sample_rate=SAMPLE_RATE, prompt_configs=prompt_pairs,temperature=0.25)
+            ],
+            reward_weights = REWARD_WEIGHTS,
+            output_dir=OUTPUT_DIR
+        )
+
     case "piano":
         MAX_COMPLETION_LENGTH = 512
         MAX_BEATS = 64
