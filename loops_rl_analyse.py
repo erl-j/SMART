@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import symusic
 import muspy
 # run_path = "artefacts/all_runs_2/piano-procedural/aes-0.04-1-100"
-run_path = "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-0.04-1-200/"
+run_path = "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-ce-0.04-1-200/"
 # run_path = "artefacts/all_runs_2/mil-dataset/pam-iou-0.04-1-100"
 #%%
 # load all logs
@@ -82,7 +82,7 @@ def get_intervals(sm):
         if len(track.notes) <= 1:
             continue
         # Sort notes by start time to ensure meaningful intervals
-        sorted_notes = sorted(track.notes, key=lambda x: x.start)
+        sorted_notes = sorted(track.notes, key=lambda x: (x.start,x.pitch,x.end, x.velocity))
         for note_idx in range(len(sorted_notes) - 1):
             # Get the current note
             note = sorted_notes[note_idx]
@@ -123,6 +123,12 @@ def get_duration_in_seconds(sm):
     sm = sm.to(symusic.TimeUnit("second"))
     return sm.end()
 
+def get_pitch_range(sm):
+    pitches = get_pitches(sm)
+    if not pitches:  # Check if the list is empty
+        return 0
+    return max(pitches) - min(pitches)
+
 
 import numpy as np
 # Helper function to try a calculation and return NaN if it fails
@@ -151,6 +157,7 @@ logs["ft_number_of_notes"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: 
 logs["ft_number_of_tempo_changes"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: get_number_of_tempo_changes(x)))
 logs["ft_number_of_time_signature_changes"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: get_number_of_time_signature_changes(x)))
 logs["ft_duration_in_seconds"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: get_duration_in_seconds(x)))
+logs["ft_pitch_range"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: get_pitch_range(x)))
 
 
 #%%
@@ -209,18 +216,283 @@ for rew in normalized_rewards:
     plt.show()
 
 
-
 #%%
 
-import muspy
 
 
-plt.figure()
-for system in ["pre", "post"]:
-    plt.hist(logs[logs["stage"] == system]["pitch_class_entropy"], bins=50, alpha=0.5, label=system)
-plt.title("pitch_class_entropy")
-plt.legend()
+# only keep logs where number of notes is not 0 or nan
+filtered_logs = logs[logs["metric_num_notes"].notna() & (logs["metric_num_notes"] != 0)]
+
+print(len(filtered_logs))
+print(len(logs))
+
+# count how many notes are in the pre and post eval
+pre_count = len(filtered_logs[filtered_logs["stage"] == "pre"])
+post_count = len(filtered_logs[filtered_logs["stage"] == "post"])
+print("Pre eval count: ", pre_count)
+print("Post eval count: ", post_count)
+
+
+#%%
+# show and prompt_and_completion_tokens that yielded 0 or nan notes
+logs[logs["metric_num_notes"].isna() | (logs["metric_num_notes"] == 0)][["prompt_and_completion_tokens", "reward_step", "idx", "stage"]].to_csv("artefacts/0_notes.csv")
+#%%
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+from matplotlib.ticker import PercentFormatter
+
+# Define custom names for the pre and post systems
+SYSTEM_NAMES = {
+    "pre": "pre",  # Change this to your preferred name for "pre"
+    "post": "post"  # Change this to your preferred name for "post"
+}
+
+# Color scheme options - choose by setting COLOR_SCHEME_INDEX
+COLOR_SCHEMES = [
+    # 0: Slate and Lilac - elegant, subtle contrast
+    ["#536878", "#C8A2C8"],
+    
+    # 1: Muted earth tones - natural and calming
+    ["#606c38", "#dda15e"],
+    
+    # 2: Monochromatic grays - professional and clean
+    ["#454545", "#909090"],
+    
+    # 3: Dark teal and muted gold - sophisticated contrast
+    ["#264653", "#e9c46a"],
+    
+    # 4: Forest green and dusty rose - organic and balanced
+    ["#2c6e49", "#d68c45"],
+    
+    # 5: Navy and coral - classic with a modern twist
+    ["#22577a", "#f6bd60"],
+    
+    # 6: Charcoal and mint - contemporary and fresh
+    ["#2b2d42", "#8d99ae"],
+    
+    # 7: Burgundy and sage - rich and subdued
+    ["#7d4f50", "#d1b48c"],
+    
+    # 8: Indigo and peach - bold yet harmonious
+    ["#293b5f", "#f5b971"],
+    
+    # 9: Olive and periwinkle - unexpected but complementary
+    ["#6b705c", "#a5a58d"]
+]
+
+# Select color scheme by index (0-9)
+COLOR_SCHEME_INDEX = 0  # Change this to select a different color scheme
+
+# Set color scheme based on selection
+colors = COLOR_SCHEMES[COLOR_SCHEME_INDEX]
+
+selected_metrics = {
+    "metric_num_notes": {
+        "title": "Number of Notes",
+        "bins": 40,
+        "range": (0, 100),
+        "description": "Distribution of note count",
+        "xaxis_label": "Note Count",
+        "yaxis_label": "Number of Tracks"
+    },
+    "metric_polyphony_rate": {
+        "title": "Polyphony Rate",
+        "bins": 30,
+        "range": (0, 1.0),
+        "description": "Proportion of polyphonic notes",
+        "xaxis_label": "Polyphony Rate",
+        "yaxis_label": "Number of Tracks"
+    },
+    "metric_empty_beat_rate": {
+        "title": "Empty Beat Rate",
+        "bins": 25,
+        "range": (0, 1.0),
+        "description": "Proportion of beats with no notes",
+        "xaxis_label": "Empty Beat Rate",
+        "yaxis_label": "Number of Tracks"
+    },
+    "fts_pitches": {
+        "title": "Pitch Distribution",
+        "bins": 50,
+        "range": (20, 100),
+        "description": "Distribution of MIDI pitch values",
+        "xaxis_label": "MIDI Pitch",
+        "yaxis_label": "Number of Notes"
+    },
+    "fts_velocities": {
+        "title": "Velocity Distribution",
+        "bins": 40,
+        "range": (0, 127),
+        "description": "Distribution of MIDI velocity values",
+        "xaxis_label": "MIDI Velocity",
+        "yaxis_label": "Number of Notes"
+    },
+    "ft_dynamic_range": {
+        "title": "Velocity Range",
+        "bins": 35,
+        "range": (0, 127),
+        "description": "Range of dynamics (loudness)",
+        "xaxis_label": "Dynamic Range",
+        "yaxis_label": "Number of Tracks"
+    },
+    "ft_pitch_range": {
+        "title": "Pitch Range",
+        "bins": 30,
+        "range": (0, 70),
+        "description": "Range between lowest and highest pitch",
+        "xaxis_label": "Pitch Range (semitones)",
+        "yaxis_label": "Number of Tracks"
+    },
+    "fts_intervals": {
+        "title": "Interval Distribution",
+        "bins": 40,
+        "range": (-60, 60),
+        "description": "Distribution of melodic intervals",
+        "xaxis_label": "Interval Size (semitones)",
+        "yaxis_label": "Number of Notes"
+    },
+    "metric_scale_consistency": {
+        "title": "Scale Consistency",
+        "bins": 30,
+        "range": (0.65, 1.0),
+        "description": "Adherence to scale patterns",
+        "xaxis_label": "Scale Consistency Score",
+        "yaxis_label": "Number of Tracks"
+    }
+}
+
+# Set up the style for a clean, minimalist appearance
+plt.style.use('seaborn-v0_8')  # Base style without the grid
+sns.set_context("paper", font_scale=1.2)
+
+# Turn off the grid
+plt.rcParams['axes.grid'] = False
+
+# Set a nicer font
+plt.rcParams['font.family'] = 'Arial'
+plt.rcParams['font.size'] = 11
+
+# Create the figure
+fig, axs = plt.subplots(3, 3, figsize=(15, 12))
+fig.subplots_adjust(hspace=0.4, wspace=0.3)  # More space between subplots
+
+# # Add a main title to the figure with improved styling
+# fig.suptitle(f'Comparison of Musical Features: {SYSTEM_NAMES["pre"]} vs {SYSTEM_NAMES["post"]}', 
+#              fontsize=20, y=0.98, fontweight='bold', fontfamily='Arial')
+
+# Flatten the axes array for easier iteration
+axs = axs.flatten()
+
+
+for i, (metric_key, metric_info) in enumerate(selected_metrics.items()):
+    ax = axs[i]
+    
+    # Determine whether to use density based on the metric prefix
+    use_density = False  # Default to count (not density)
+    
+    for j, system in enumerate(["pre", "post"]):
+        # Handle metrics that are stored as lists
+        if isinstance(filtered_logs[filtered_logs["stage"] == system][metric_key].iloc[0], list):
+            all_values = []
+            for values in filtered_logs[filtered_logs["stage"] == system][metric_key]:
+                all_values.extend(values)
+            
+            # Filter values to be within the specified range
+            filtered_values = [v for v in all_values if metric_info["range"][0] <= v <= metric_info["range"][1]]
+            
+            # Plot histogram with appropriate settings
+            ax.hist(filtered_values, 
+                   bins=metric_info["bins"], 
+                   range=metric_info["range"],
+                   alpha=0.6, 
+                   density=use_density,  # Use count instead of density for specific metrics
+                   color=colors[j],
+                   edgecolor='black', 
+                   linewidth=0.5,
+                   label=f"{SYSTEM_NAMES[system]}")  # Use custom system name
+        else:
+            # Same for non-list metrics
+            data = filtered_logs[filtered_logs["stage"] == system][metric_key]
+            filtered_data = data[(data >= metric_info["range"][0]) & (data <= metric_info["range"][1])]
+            
+            ax.hist(filtered_data, 
+                   bins=metric_info["bins"], 
+                   range=metric_info["range"],
+                   alpha=0.6, 
+                   density=use_density,
+                   color=colors[j],
+                   edgecolor='black', 
+                   linewidth=0.5,
+                   label=f"{SYSTEM_NAMES[system]}")  # Use custom system name
+    
+    # Add titles and labels with better descriptions and enhanced styling
+    ax.set_title(metric_info["title"], fontsize=14, fontweight='bold', fontfamily='Arial')
+    ax.set_xlabel(metric_info["xaxis_label"], fontsize=12, fontfamily='Arial')  # Use the new xaxis_label
+    ax.set_ylabel(metric_info["yaxis_label"], fontsize=12, fontfamily='Arial')  # Use the new yaxis_label
+    
+    # Add a legend with automatic positioning to avoid overlapping with data
+    # Add a box around the legend and set its background to white to avoid grid interference
+    ax.legend(loc="best", frameon=True, facecolor='white', edgecolor='gray', framealpha=1.0)
+    
+    # Clean up the plot - remove grid and unnecessary spines
+    ax.grid(False)  # Explicitly turn off the grid
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    # Format y-axis with integers for counts and make ticks sparser
+    ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True, nbins=5))  # Reduced number of y-ticks
+
+# Add a caption below the figure
+# fig.text(0.5, 0.01, 
+#          f"Figure 1: Comparative analysis of musical features: {SYSTEM_NAMES['pre']} versus {SYSTEM_NAMES['post']}. Each subplot shows the frequency distribution of a specific musical metric.", 
+#          ha='center', fontsize=12, style='italic')
+
+plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust layout to make room for suptitle and caption
+plt.savefig('music_metrics_comparison.pdf', dpi=300, bbox_inches='tight')
+plt.savefig('music_metrics_comparison.png', dpi=300, bbox_inches='tight')
 plt.show()
+#%%
+
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+
+# print distribution for aes_scores_CE, aes_scores_CU, aes_scores_PC, aes_scores_PQ
+# Set the style
+sns.set(style="whitegrid")
+
+# Create a 4 split histograms for aes_scores_CE, aes_scores_CU, aes_scores_PC, aes_scores_PQ
+plt.figure(figsize=(12, 4))
+
+audiobox_full_names = {
+    "CE" : "Content Enjoyment"
+    , "CU" : "Content Usefulness"
+    , "PC" : "Production Complexity"
+    , "PQ" : "Production Quality"
+}
+
+
+for i, rew in enumerate(["aes_scores_CE", "aes_scores_CU", "aes_scores_PC", "aes_scores_PQ"]):
+    # plot in one row, no grid
+    plt.subplot(1, 4, i+1)
+    for system in ["pre", "post"]:
+        plt.hist(logs[logs["stage"] == system][rew], bins=10, alpha=0.5, label=system, range=(0, 10))
+    plt.title(f"Predicted {audiobox_full_names[rew.split("_")[-1]]}")
+    plt.legend()
+    # set y lim from 0 to 1000
+    plt.ylim(0, 1000)
+    plt.xlabel("Score")
+    plt.ylabel("Number of Tracks")
+    plt.grid(False)
+    plt.tight_layout()
+    ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True, nbins=3))  # Reduced number of y-ticks
+
+plt.savefig('aes_scores_comparison.pdf', dpi=300, bbox_inches='tight')
+plt.show()
+
+
 #%%
 
 

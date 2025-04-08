@@ -36,14 +36,14 @@ NUM_TRAIN_STEPS = 1000
 LEARNING_RATE = 1e-4
 SEARCH_SAMPLING_PARAMS = False
 
-BETA = 0.04
+BETA = 0.00
 
 # MODEL = "piano" #"MIL"
 # PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
-# MODEL = "piano-4l"
-# PROMPT_SOURCE = "procedural-no-starting-note" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
-MODEL = "mil"
-PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
+MODEL = "piano-4l"
+PROMPT_SOURCE = "procedural-no-starting-note" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
+# MODEL = "mil"
+# PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
 SAVE_STEPS = 20
 N_EVAL_PROMPTS=1000
@@ -62,7 +62,7 @@ REWARD_WEIGHTS = {
     # "PC": 0.0,
     # "PQ": 1.0,
     # "programs_iou": 3.0,
-    "programs_iou": 1.0,
+    # "programs_iou": 1.0,
     # "pam_avg": 1.0,
 }
 
