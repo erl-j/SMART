@@ -15,53 +15,60 @@ import torch
 import wandb
 import random
 from loops_util import prepare_input
+from tokenisation import IrmaTokenizer, IrmaTokenizerConfig
 
 # %%
-    
+IrmaTokenizerConfig(
+        ticks_per_beat=96,
+        positions_per_beat=12,
+        tempo_range=(60, 250),
+        n_tempo_bins=32,
+        n_velocity_bins=32,
+        n_bars=4,
+        duration_ranges=((2,12), (16,6))
+)
 
-MAX_PROMPT_LENGTH = 16    
-MAX_TOKENS = 2048
-
-tokenizer_config = miditok.TokenizerConfig.load_from_json("data/gmd_loops_2_tokenized_2/tokenizer_config.json")
-tokenizer = miditok.REMI(tokenizer_config)
-
+tokenizer = IrmaTokenizer(
+    IrmaTokenizerConfig(
+        ticks_per_beat=96,
+        positions_per_beat=12,
+        tempo_range=(60, 250),
+        n_tempo_bins=32,
+        n_velocity_bins=32,
+        n_bars=4,
+        duration_ranges=((2,12), (16,6))
+    )
+)
 
 from datasets import Dataset
 trn_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/trn_subset")
-trn_ds.filter(lambda x: len(x["token_ids"]) <= MAX_TOKENS, num_proc=16)
+val_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/val")
 
 #%%
 from util import preview_sm
 import symusic
+
+idx = 100
 # preview midi form first sample
-preview_sm(symusic.Score.from_midi(trn_ds[0]['midi_bytes']))
+preview_sm(symusic.Score.from_midi(trn_ds[idx]['midi_bytes']))
 
-#%%
+tokens = tokenizer.midi_to_tokens(symusic.Score.from_midi(trn_ds[idx]['midi_bytes']), shuffle_tracks=True)
 
-
-val_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/val")
-val_ds.filter(lambda x: len(x["token_ids"]) <= MAX_TOKENS, num_proc=16)
-
-#%%
-# print example
-sample = trn_ds[25]
-
-tokens = tokenizer._ids_to_tokens(sample["token_ids"])
-# convert to tokens
-
+# turn back into midi
+midi = tokenizer.tokens_to_midi(tokens)
+preview_sm(midi)
 
 # %%
 
 model_config = Phi3Config(
-    vocab_size=tokenizer.vocab_size,
-    eos_token_id=tokenizer.vocab["EOS_None"],
-    bos_token_id=tokenizer.vocab["BOS_None"],
-    pad_token_id=tokenizer.vocab["PAD_None"],
+    vocab_size=len(tokenizer.vocab),
+    eos_token_id=tokenizer.token_to_idx["EOS_None"],
+    bos_token_id=tokenizer.token_to_idx["BOS_None"],
+    pad_token_id=tokenizer.token_to_idx["PAD_None"],
     num_hidden_layers=6,
     hidden_size=512,
     intermediate_size=2048,
     num_attention_heads=8,
-    positional_embedding_type="absolute",
     )
 model = Phi3ForCausalLM(model_config)
 
@@ -70,47 +77,62 @@ model = Phi3ForCausalLM(model_config)
 # print model params in scientific notation
 # print(f"Model has {model.num_parameters()} parameters")
 print(f"Model has {model.num_parameters() / 1e6} million parameters")
+
+#%% first add token ids to dataset
+trn_ds = trn_ds.map(
+    lambda x: {
+        "token_ids": tokenizer.midi_to_token_ids(
+            symusic.Score.from_midi(x["midi_bytes"]), shuffle_tracks=True
+        )
+    },
+    num_proc=16,
+)
+
+val_ds = val_ds.map(
+    lambda x: {
+        "token_ids": tokenizer.midi_to_token_ids(
+            symusic.Score.from_midi(x["midi_bytes"]), shuffle_tracks=True
+        )
+    },
+    num_proc=16,
+)
+
+#%%
+MAX_SEQ_LENGTH = 2048
+
+# filter out sequences longer than MAX_SEQ_LENGTH
+trn_ds = trn_ds.filter(lambda x: len(x["token_ids"]) < MAX_SEQ_LENGTH, num_proc=16)
+val_ds = val_ds.filter(lambda x: len(x["token_ids"]) < MAX_SEQ_LENGTH, num_proc=16)
 # %%
-
-
-
-
-
-# %%
-
 class MyDataCollator:
     def __init__(self, tokenizer, max_seq_len):
         self.tokenizer = tokenizer
-        self.infilling_tokens = [
-            tokenizer[t] for t in tokenizer.vocab if t.startswith("INF")
-        ]
         self.max_seq_len = max_seq_len
 
-    def _random_crop(self, seq):
+    def _crop(self, seq):
         return seq[: self.max_seq_len]
 
     def __call__(self, batch):
         # for each seq in the batch, select a random crop of N tokens
-        input_ids = []
-
         # select a random crop of tokens
+        input_ids_stack = []
         for b in batch:
-            # tokens = self.tokenizer._ids_to_tokens(b["token_ids"])
-            # program_tokens = [t for t in tokens if t.startswith("Program_")]
-            # program_tokens = np.unique(np.random.permutation(program_tokens)).tolist()
-            # seq = program_tokens + tokens
-            # seq = ["BOS_None"] + seq + ["EOS_None"]
-            # ids = self.tokenizer._tokens_to_ids(seq)
-            # input_ids.append(torch.LongTensor(ids))
-            input_ids.append(torch.LongTensor(prepare_input(b["token_ids"], self.tokenizer)))
+            input_ids = b["token_ids"]
+            # add BOS_token and EOS_token
+            input_ids = [self.tokenizer.token_to_idx["BOS_None"], *input_ids, self.tokenizer.token_to_idx["EOS_None"]]
+            # convert to long tensor
+            input_ids = torch.LongTensor(input_ids)
+            # append to stack
+            input_ids_stack.append(input_ids)
+    
         # crop
-        input_ids = [self._random_crop(seq) for seq in input_ids]
+        input_ids = [self._crop(seq) for seq in input_ids_stack]
             
         # pad tokens to max length
         input_ids = self._pad_batch(input_ids)
         
         attention_mask = torch.where(
-            input_ids != self.tokenizer.vocab["PAD_None"], 1, 0
+            input_ids != self.tokenizer.token_to_idx["PAD_None"], 1, 0
         )
         if attention_mask.dim() == 3:
             attention_mask = attention_mask[..., 0]  # (N,T,Z) --> (N,T)
@@ -133,11 +155,11 @@ class MyDataCollator:
             return torch.stack(batch, dim=0).long()
 
         return torch.nn.utils.rnn.pad_sequence(
-            batch, batch_first=True, padding_value=self.tokenizer.vocab["PAD_None"]
+            batch, batch_first=True, padding_value=self.tokenizer.token_to_idx["PAD_None"]
         ).long()
     
 
-collator = MyDataCollator(tokenizer, MAX_TOKENS+MAX_PROMPT_LENGTH)
+collator = MyDataCollator(tokenizer, MAX_SEQ_LENGTH)
 
 
 with wandb.init(
@@ -158,7 +180,7 @@ with wandb.init(
         per_device_eval_batch_size=32,
         warmup_steps=500, 
         weight_decay=0.01,
-        save_total_limit=3,
+        save_total_limit=8,
         bf16=True,
         # torch_compile=True,
         learning_rate=5e-4,
