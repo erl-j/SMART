@@ -191,6 +191,8 @@ class CMLMTrainer(Trainer):
             inputs["position_ids"] = inputs["position_ids"].to(inputs["input_ids"].device)
             
         return inputs
+    
+
 
 #%%
 

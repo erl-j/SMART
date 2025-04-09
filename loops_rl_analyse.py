@@ -218,6 +218,40 @@ for rew in normalized_rewards:
 
 #%%
 
+zero_note_logs = logs[logs["metric_num_notes"] == 0]
+nan_note_logs = logs[logs["metric_num_notes"].isna()]
+
+
+# get idx of zero_note_logs
+zero_note_logs_idx = zero_note_logs["idx"].tolist()
+print("Indices of logs with 0 notes: ", zero_note_logs_idx)
+
+#%%
+import IPython.display as ipd
+# playback audio for idx in zero_note_logs_idx:
+for row in zero_note_logs.iterrows():
+    # print midi_path
+    audio_path = row[1]["midi_path"].replace(".mid", ".wav").replace("//", "/").replace("midi", "audio")
+    print(audio_path)
+    ipd.display(ipd.Audio(filename=audio_path, autoplay=True))
+
+
+#%%
+# now same thing for 10 samples from the normal logs
+normal_logs = logs
+
+for row in normal_logs.sample(10).iterrows():
+    # print midi_path
+    audio_path = row[1]["midi_path"].replace(".mid", ".wav").replace("//", "/").replace("midi", "audio")
+    print(audio_path)
+    ipd.display(ipd.Audio(filename=audio_path, autoplay=True))
+
+
+
+#%%
+
+print("Number of logs with 0 notes: ", len(zero_note_logs))
+print("Number of logs with nan notes: ", len(nan_note_logs))
 
 
 # only keep logs where number of notes is not 0 or nan
@@ -231,6 +265,8 @@ pre_count = len(filtered_logs[filtered_logs["stage"] == "pre"])
 post_count = len(filtered_logs[filtered_logs["stage"] == "post"])
 print("Pre eval count: ", pre_count)
 print("Post eval count: ", post_count)
+
+# print indices with 0 or nan notes
 
 
 #%%
@@ -478,7 +514,7 @@ for i, rew in enumerate(["aes_scores_CE", "aes_scores_CU", "aes_scores_PC", "aes
     # plot in one row, no grid
     plt.subplot(1, 4, i+1)
     for system in ["pre", "post"]:
-        plt.hist(logs[logs["stage"] == system][rew], bins=10, alpha=0.5, label=system, range=(0, 10))
+        plt.hist(logs[logs["stage"] == system][rew], bins=10, alpha=0.5, label=system, range=(1, 10))
     plt.title(f"Predicted {audiobox_full_names[rew.split("_")[-1]]}")
     plt.legend()
     # set y lim from 0 to 1000

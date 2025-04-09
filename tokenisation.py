@@ -500,6 +500,11 @@ class IrmaTokenizer(BaseTokenizer):
         tokens = self.midi_to_tokens(midi, shuffle_tracks)
         return self.tokens_to_ids(tokens)
     
+    def remove_special_tokens(self, tokens: List[str]) -> List[str]:
+        """Remove special tokens from the token list."""
+        special_tokens = ["BOS_None", "EOS_None", "SEP_None", "PAD_None"]
+        return [token for token in tokens if token not in special_tokens]
+    
     def token_ids_to_midi(self, token_ids: List[int]) -> symusic.Score:
         """Convert token IDs back to a MIDI score."""
         tokens = self.ids_to_tokens(token_ids)
@@ -602,6 +607,8 @@ class IrmaTokenizer(BaseTokenizer):
     def tokens_to_midi(self, tokens):
 
         tokens = tokens.copy()
+
+        tokens = self.remove_special_tokens(tokens)
 
         # assert that the first token is a tempo token
         assert tokens[0].startswith("Tempo_"), "First token must be a tempo token"
