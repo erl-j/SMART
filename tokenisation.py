@@ -200,6 +200,11 @@ class TanjaTokenizer(BaseTokenizer):
 
         self.token_to_idx = {token: idx for idx, token in enumerate(self.vocab)}
 
+    def remove_special_tokens(self, tokens: List[str]) -> List[str]:
+        """Remove special tokens from the token list."""
+        special_tokens = ["BOS_None", "EOS_None", "SEP_None", "PAD_None"]
+        return [token for token in tokens if token not in special_tokens]
+
     def get_inactive_note_tokens(self):
         # get inactive note attributes
         program_token = f"Program_inactive"
@@ -293,6 +298,7 @@ class TanjaTokenizer(BaseTokenizer):
     def tokens_to_midi(self, tokens):
         # make copy of tokens
         tokens = tokens.copy()
+        tokens = self.remove_special_tokens(tokens)
         # create score
         midi = symusic.Score()
         # set to ticks per beat

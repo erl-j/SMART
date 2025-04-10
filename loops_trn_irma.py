@@ -41,7 +41,7 @@ tokenizer = IrmaTokenizer(
 )
 
 from datasets import Dataset
-trn_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/trn_subset")
+trn_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/trn")
 val_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/val")
 
 #%%

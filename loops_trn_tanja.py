@@ -33,7 +33,7 @@ tokenizer = TanjaTokenizer(
 )
 
 from datasets import Dataset
-trn_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/trn_subset")
+trn_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/trn")
 val_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/val")
 
 #%%
@@ -54,7 +54,9 @@ print(len(tokens))
 
 # %%
 
-model_config = Phi3Config(
+from transformers import GPT2Model, GPT2Config, GPT2LMHeadModel
+
+model_config = GPT2Config(
     vocab_size=len(tokenizer.vocab),
     eos_token_id=tokenizer.token_to_idx["EOS_None"],
     bos_token_id=tokenizer.token_to_idx["BOS_None"],
@@ -63,8 +65,26 @@ model_config = Phi3Config(
     hidden_size=512,
     intermediate_size=2048,
     num_attention_heads=8,
-    )
-model = Phi3ForCausalLM(model_config)
+    max_position_embeddings=10_000,
+    tied_word_embeddings=False,
+    embd_pdrop=0.0,
+    attn_pdrop=0.0,
+    resid_pdrop=0.0,
+)
+
+model = GPT2LMHeadModel(model_config)
+
+# model_config = Phi3Config(
+#     vocab_size=len(tokenizer.vocab),
+#     eos_token_id=tokenizer.token_to_idx["EOS_None"],
+#     bos_token_id=tokenizer.token_to_idx["BOS_None"],
+#     pad_token_id=tokenizer.token_to_idx["PAD_None"],
+#     num_hidden_layers=6,
+#     hidden_size=512,
+#     intermediate_size=2048,
+#     num_attention_heads=8,
+#     )
+# model = Phi3ForCausalLM(model_config)
 
 # %%
 
@@ -121,8 +141,8 @@ class MyDataCollator:
         input_ids_stack = []
         position_ids_stack = []
         for b in batch:
-            input_ids = b["token_ids"]
-            position_ids = [i+1 for i in range(len(input_ids))]
+            input_ids = b["token_ids"].copy()
+            position_ids = [i for i in range(len(input_ids))]
 
             n_masked = random.randint(0, len(input_ids))
 
@@ -137,7 +157,7 @@ class MyDataCollator:
 
             # add BOS_token id
             new_input_ids = [self.tokenizer.token_to_idx["BOS_None"], *new_input_ids]
-            new_position_ids = [0, *new_position_ids]
+            new_position_ids = [*new_position_ids, len(new_position_ids)]
 
             input_ids = torch.LongTensor(new_input_ids)
             position_ids = torch.LongTensor(new_position_ids)
@@ -169,14 +189,71 @@ for i in range(10):
 
 # run through collator
 collated = collator(test_batch)
-# show length of input_ids
-print(collated["input_ids"].shape)
-print(collated["position_ids"].shape)
 
-print(collated["input_ids"][0])
-print(collated["position_ids"][0])
+# now check that we can recover original input_ids by sorting by position_ids
+for i in range(10):
+    shuffled_input_ids = collated["input_ids"][i][1:]
+    shuffled_position_ids = collated["position_ids"][i][:-1]
+    argsorted = torch.argsort(shuffled_position_ids)
+    # sort input_ids by position_ids
+    sorted_input_ids = shuffled_input_ids[argsorted]
+    # assert that sorted_input_ids is equal to original input_ids
+    assert torch.equal(sorted_input_ids, torch.LongTensor(test_batch[i]["token_ids"])), f"Sample {i} failed"
+    print(f"Sample {i} passed")
+
+    # assert that the first sorted input id is the BOS token
+    # assert that the second is a Program_ token
+    sorted_tokens = tokenizer.ids_to_tokens(sorted_input_ids)
+    print(sorted_tokens[:10])
+    assert sorted_tokens[0].startswith("Tempo_"), f"Sample {i} failed"
+    # assert that second starts with "Onset_"
+    assert sorted_tokens[1].startswith("Program_"), f"Sample {i} failed"
+# now sort input_ids by length
+
+
+def verify_position_embeddings(model):
+    # Get the device that model is on
+    device = next(model.parameters()).device
+    
+    # Create test inputs with different position IDs but same token IDs
+    test_inputs = {
+        "input_ids": torch.LongTensor([[1, 2, 3]]).to(device),
+        "position_ids": torch.LongTensor([[5, 2, 9]]).to(device)
+    }
+    
+    with torch.no_grad():
+        # Get outputs with first set of position IDs
+        out1 = model(**test_inputs)
+        
+        # Change only the position IDs
+        test_inputs["position_ids"] = torch.LongTensor([[1, 2, 3]]).to(device)
+        
+        # Get outputs with second set of position IDs
+        out2 = model(**test_inputs)
+
+        test_inputs["position_ids"] = torch.LongTensor([[1, 2, 3]]).to(device)
+
+        out3 = model(**test_inputs)
+
+    # check if out 1 and out 3 are the same
+    if torch.allclose(out2.logits, out3.logits):
+        print("Great news! Same position IDs are giving same outputs.")
+    else:
+        print("WARNING: Position IDs are not working correctly!")
+        print("This may cause issues with your masked language modeling approach.")
+        raise ValueError("Position IDs are not working correctly!")
+        
+    # Check if outputs are different
+    if torch.allclose(out1.logits, out2.logits):
+        print("WARNING: Position IDs don't seem to affect model outputs!")
+        print("This may cause issues with your masked language modeling approach.")
+        raise ValueError("Position IDs are not affecting model outputs.")
+    else:
+        diff = (out1.logits - out2.logits).abs().max().item()
+        print(f"Position embeddings are working correctly. Max difference: {diff:.6f}")
+
+verify_position_embeddings(model)
 #%%
-
 # create custom trainer
 class CMLMTrainer(Trainer):
     def _prepare_inputs(self, inputs):
@@ -191,11 +268,7 @@ class CMLMTrainer(Trainer):
             inputs["position_ids"] = inputs["position_ids"].to(inputs["input_ids"].device)
             
         return inputs
-    
-
-
 #%%
-
 with wandb.init(
     project="aestune_mt",
     job_type="training",
@@ -217,7 +290,7 @@ with wandb.init(
         save_total_limit=8,
         bf16=True,
         # torch_compile=True,
-        learning_rate=5e-4,
+        learning_rate=4e-5,
         lr_scheduler_type="cosine_with_min_lr",
         lr_scheduler_kwargs={"min_lr": 5e-6},
         remove_unused_columns=False,

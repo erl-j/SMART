@@ -5,31 +5,57 @@ from util import preview_sm
 from symusic import BuiltInSF3, Synthesizer
 import IPython.display as ipd
 
-checkpoint = "outputs/mt/silvery-forest-28/checkpoint-150000"
+checkpoint = "outputs/mt/lively-waterfall-47/checkpoint-25000"
 
-from tokenisation import IrmaTokenizer, IrmaTokenizerConfig
+from tokenisation import TanjaTokenizer, TanjaTokenizerConfig
 
 # %%
 
-tokenizer = IrmaTokenizer(
-    IrmaTokenizerConfig(
+tokenizer = TanjaTokenizer(
+    TanjaTokenizerConfig(
         ticks_per_beat=96,
-        positions_per_beat=12,
-        tempo_range=(60, 250),
+        coarse_ticks_per_beat=12,
+        tempo_range=(60, 200),
         n_tempo_bins=32,
         n_velocity_bins=32,
         n_bars=4,
-        duration_ranges=((2,12), (16,6))
+        n_events=300,
     )
 )
+
 model = AutoModelForCausalLM.from_pretrained(checkpoint)
 
 
 # %%
 import torch
-
-prompt = ["BOS_None"]
+# bos tempo program pitch
+prompt = ["BOS_None", "Tempo_87", "Pitch_Drum50"]
 input_ids = torch.tensor(tokenizer.tokens_to_ids(prompt))[None,...]
+position_ids = torch.tensor([0,2,1])[None,...]
+# increment last position id by 1
+print(position_ids)
+print(position_ids)
+
+# apply model.forward
+out = model(
+    input_ids=input_ids,
+    position_ids=position_ids,
+    return_dict=True,
+    # attention_mask=torch.ones(input_ids.shape).to(input_ids.device),
+    # use_cache=True
+)
+print(out.logits.shape)
+vocab = tokenizer.vocab
+
+probs = out.logits[0, -1, :].softmax(dim=-1)
+
+print("\n")
+# get top 10 probability tokens
+top_10 = torch.topk(probs, 10)
+for i in range(10):
+    print(vocab[top_10.indices[i].item()], top_10.values[i].item())
+
+#%%
 
 # generate a sequence
 out = model.generate(
@@ -40,7 +66,7 @@ out = model.generate(
     bos_token_id=tokenizer.token_to_idx["BOS_None"],
     eos_token_id=tokenizer.token_to_idx["EOS_None"],
     num_return_sequences=1,
-    temperature=0.9,
+    temperature=1.0,
     use_cache=True
     # top_k=1,
     # top_p=0.95,
@@ -48,10 +74,13 @@ out = model.generate(
 
 # decode the sequence
 tokens = tokenizer.ids_to_tokens(out[0].tolist())
-sm = tokenizer.tokens_to_midi(tokens)
 
 print(tokens)
+sm = tokenizer.tokens_to_midi(tokens)
+
 preview_sm(sm)
+
+#%%
 
 # replace drums
 # take head (everything before the first track_None)
@@ -79,7 +108,6 @@ tracks = split_list(tail_tokens, "Track_None")
 # remove empty tracks
 tracks = [tr for tr in tracks if len(tr) > 0]
 
-
 for tr in tracks:
     print(tr)
 
@@ -92,11 +120,9 @@ print(program_tokens)
 
 head_head_tokens = head_tokens[:2]
 
-# export midi
-sm.dump_midi("artefacts/a_irma_test_a.mid")
 #%%
 
-program_to_replace = "33"
+program_to_replace = "Drums"
 
 # get index replace program
 program_idx = program_tokens.index(f"Program_{program_to_replace}")
@@ -106,7 +132,7 @@ program_tokens = [pr for i, pr in enumerate(program_tokens) if i != program_idx]
 tracks = [tr for i, tr in enumerate(tracks) if i != program_idx]
 
 # new_program
-new_program = "33"
+new_program = "Drums"
 # add new program to end
 program_tokens.append(f"Program_{new_program}")
 
@@ -140,7 +166,7 @@ out = model.generate(
     bos_token_id=tokenizer.token_to_idx["BOS_None"],
     eos_token_id=tokenizer.token_to_idx["EOS_None"],
     num_return_sequences=1,
-    temperature=0.9,
+    temperature=1.0,
     use_cache=True
 )
 
@@ -149,7 +175,6 @@ tokens = tokenizer.ids_to_tokens(out[0].tolist())
 sm = tokenizer.tokens_to_midi(tokens)
 preview_sm(sm)
 
-sm.dump_midi("artefacts/a_irma_test_b.mid")
 
 # %%
 
