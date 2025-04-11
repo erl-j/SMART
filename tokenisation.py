@@ -295,6 +295,34 @@ class TanjaTokenizer(BaseTokenizer):
         assert tokens[0].startswith("Tempo_"), "First token must be a tempo token"
         return tokens
     
+    def get_prob_mask(self,idx):
+        # get last token
+        if idx == 0:
+            return [1 if token.startswith("Tempo_") else 0 for token in self.vocab]
+        else:
+            attr_index = (idx-1) % len(self.event_attribute_order)
+            attr_str = self.event_attribute_order[attr_index]
+            return [1 if token.startswith(attr_str) else 0 for token in self.vocab]
+
+        # last_token = tokens[-1]
+        # attr_str = last_token.split("_")[0]
+        # # if token is BOS, return mask which has all tempo tokens to 1 and rest to 0
+        # if attr_str == "BOS":
+        #     return [1 if token.startswith("Tempo_") else 0 for token in tokens]
+        # # if token is Tempo, return mask which has all Program tokens to 1 and rest to 0
+        # elif attr_str == "Tempo":
+        #     return [1 if token.startswith("Program_") else 0 for token in tokens]
+        # # if last token is in event attribute order
+        # elif attr_str in self.event_attribute_order:
+        #     # get index of last token
+        #     idx = self.event_attribute_order.index(attr_str)
+        #     # get next attribute
+        #     next_attr = self.event_attribute_order[(idx + 1) % len(self.event_attribute_order)]
+        #     # return mask which has all next attributes to 1 and rest to 0
+        #     return [1 if token.startswith(next_attr) else 0 for token in tokens]
+        # else:
+        #     raise ValueError(f"Unknown token type: {last_token}")
+    
     def tokens_to_midi(self, tokens):
         # make copy of tokens
         tokens = tokens.copy()
@@ -319,6 +347,8 @@ class TanjaTokenizer(BaseTokenizer):
             note_tokens = tokens[:len(self.event_attribute_order)]
             tokens = tokens[len(self.event_attribute_order):]
 
+            print(f"Note tokens: {note_tokens}")
+
             # get note attributes
             program_token = note_tokens[0]
             # assert that this is a program token
@@ -332,36 +362,48 @@ class TanjaTokenizer(BaseTokenizer):
             # assert that this is a pitch token
             assert pitch_token.startswith("Pitch_"), "Second token must be a pitch token"
             pitch_str = pitch_token.split("_")[-1]
+            if pitch_str == "inactive":
+                continue
             pitch = int(pitch_str) if "Drum" not in pitch_str else int(pitch_str.split("Drum")[-1])
             # get onset coarse token
             onset_coarse_token = note_tokens[2]
             # assert that this is a onset token
             assert onset_coarse_token.startswith("Onset_"), "Third token must be an onset token"
             onset_coarse_str = onset_coarse_token.split("_")[-1]
+            if onset_coarse_str == "inactive":
+                continue
             onset_coarse = int(onset_coarse_str)
             # get onset fine token
             onset_fine_token = note_tokens[3]
             # assert that this is a onset token
             assert onset_fine_token.startswith("Microtiming_"), "Fourth token must be an onset token"
             onset_fine_str = onset_fine_token.split("_")[-1]
+            if onset_fine_str == "inactive":
+                continue
             onset_fine = int(onset_fine_str)
             # get offset token
             offset_token = note_tokens[4]
             # assert that this is a offset token
             assert offset_token.startswith("Offset_"), "Fifth token must be an offset token"
             offset_str = offset_token.split("_")[-1]
+            if offset_str == "inactive":
+                continue
             offset = int(offset_str)
             # get duration token
             duration_token = note_tokens[5]
             # assert that this is a duration token
             assert duration_token.startswith("Duration_"), "Sixth token must be a duration token"
             duration_str = duration_token.split("_")[-1]
+            if duration_str == "inactive":
+                continue
             duration = int(duration_str)
             # get velocity token
             velocity_token = note_tokens[6]
             # assert that this is a velocity token
             assert velocity_token.startswith("Velocity_"), "Seventh token must be a velocity token"
             velocity_str = velocity_token.split("_")[-1]
+            if velocity_str == "inactive":
+                continue
             velocity = int(velocity_str)
             # create note
             if program not in program_notes:
@@ -426,6 +468,8 @@ class IrmaTokenizer(BaseTokenizer):
     Offset is only present if needed.
     Only supports 4/4 time signature.
     '''
+
+    config_cls = IrmaTokenizerConfig
 
     def __init__(self, config: IrmaTokenizerConfig):
         super().__init__(config)

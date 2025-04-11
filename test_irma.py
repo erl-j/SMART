@@ -5,7 +5,7 @@ from util import preview_sm
 from symusic import BuiltInSF3, Synthesizer
 import IPython.display as ipd
 
-checkpoint = "outputs/mt/silvery-forest-28/checkpoint-150000"
+checkpoint = "outputs/mt/silvery-forest-28/checkpoint-350000"
 
 from tokenisation import IrmaTokenizer, IrmaTokenizerConfig
 
@@ -24,7 +24,9 @@ tokenizer = IrmaTokenizer(
 )
 model = AutoModelForCausalLM.from_pretrained(checkpoint)
 
-
+# save tokenizer to parent dir of checkpoint
+tokenizer_path = checkpoint.replace(checkpoint.split("/")[-1], "tokenizer_config.json")
+tokenizer.to_json(tokenizer_path)
 # %%
 import torch
 
@@ -50,6 +52,8 @@ out = model.generate(
 tokens = tokenizer.ids_to_tokens(out[0].tolist())
 sm = tokenizer.tokens_to_midi(tokens)
 
+
+#%%
 print(tokens)
 preview_sm(sm)
 
@@ -94,9 +98,9 @@ head_head_tokens = head_tokens[:2]
 
 # export midi
 sm.dump_midi("artefacts/a_irma_test_a.mid")
-#%%
 
-program_to_replace = "33"
+program_to_replace = "Drums"
+new_program = "Drums"
 
 # get index replace program
 program_idx = program_tokens.index(f"Program_{program_to_replace}")
@@ -106,7 +110,6 @@ program_tokens = [pr for i, pr in enumerate(program_tokens) if i != program_idx]
 tracks = [tr for i, tr in enumerate(tracks) if i != program_idx]
 
 # new_program
-new_program = "33"
 # add new program to end
 program_tokens.append(f"Program_{new_program}")
 

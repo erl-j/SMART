@@ -50,7 +50,6 @@ tokens = tokenizer.midi_to_tokens(symusic.Score.from_midi(trn_ds[idx]['midi_byte
 midi = tokenizer.tokens_to_midi(tokens)
 preview_sm(midi)
 
-print(len(tokens))
 
 # %%
 
@@ -85,6 +84,8 @@ model = GPT2LMHeadModel(model_config)
 #     num_attention_heads=8,
 #     )
 # model = Phi3ForCausalLM(model_config)
+
+
 
 # %%
 
@@ -135,13 +136,18 @@ class MyDataCollator:
     def __init__(self, tokenizer):
         self.tokenizer = tokenizer
 
-    def __call__(self, batch):
+    def __call__(self, batch, retokenize=True):
         # for each seq in the batch, select a random crop of N tokens
         # select a random crop of tokens
         input_ids_stack = []
         position_ids_stack = []
         for b in batch:
-            input_ids = b["token_ids"].copy()
+            if retokenize:
+                # retokenize
+                input_ids = tokenizer.midi_to_token_ids(symusic.Score.from_midi(b["midi_bytes"]), shuffle_events=True)
+            else:
+                input_ids = b["token_ids"].copy()
+
             position_ids = [i for i in range(len(input_ids))]
 
             n_masked = random.randint(0, len(input_ids))
@@ -188,7 +194,7 @@ for i in range(10):
     print(f"Sample {i}: {len(test_batch[i]['token_ids'])}")
 
 # run through collator
-collated = collator(test_batch)
+collated = collator(test_batch, retokenize=False)
 
 # now check that we can recover original input_ids by sorting by position_ids
 for i in range(10):
@@ -290,7 +296,7 @@ with wandb.init(
         save_total_limit=8,
         bf16=True,
         # torch_compile=True,
-        learning_rate=4e-5,
+        learning_rate=5e-4,
         lr_scheduler_type="cosine_with_min_lr",
         lr_scheduler_kwargs={"min_lr": 5e-6},
         remove_unused_columns=False,

@@ -5,7 +5,7 @@ from util import preview_sm
 from symusic import BuiltInSF3, Synthesizer
 import IPython.display as ipd
 
-checkpoint = "outputs/mt/lively-waterfall-47/checkpoint-25000"
+checkpoint = "outputs/mt/polar-field-49/checkpoint-125000"
 
 from tokenisation import TanjaTokenizer, TanjaTokenizerConfig
 
@@ -23,15 +23,111 @@ tokenizer = TanjaTokenizer(
     )
 )
 
+# save tokenizer to parent dir of checkpoint
+tokenizer_path = checkpoint.replace(checkpoint.split("/")[-1], "tokenizer_config.json")
+tokenizer.to_json(tokenizer_path)
+
 model = AutoModelForCausalLM.from_pretrained(checkpoint)
 
-
 # %%
+
+# write vocab to file
+with open("vocab.txt", "w") as f:
+    for token in tokenizer.vocab:
+        f.write(token + "\n")
+#%%
 import torch
+
+model = model.to("cuda:2")
+
+def infer(model, token_ids, position_ids):
+    token_ids = token_ids.to(model.device)
+    position_ids = position_ids.to(model.device)
+    past_key_values = None
+    model.eval()
+    with torch.no_grad():
+        for i in range(token_ids.shape[-1], position_ids.shape[-1]):
+            # Get current position IDs slice
+            current_position_ids = position_ids[:, :token_ids.shape[-1]]
+            
+            # Forward pass
+            outputs = model(
+                input_ids=token_ids if past_key_values is None else token_ids[:, -1:],
+                position_ids=current_position_ids if past_key_values is None else current_position_ids[:, -1:],
+                past_key_values=past_key_values,
+                use_cache=True,
+                return_dict=True
+            )
+            
+            # Update KV cache
+            past_key_values = outputs.past_key_values
+            
+            # Sample next token more efficiently
+            next_token_logits = outputs.logits[:, -1, :]
+
+            last_pos_id = current_position_ids[:, -1].item()
+            prior = torch.tensor(tokenizer.get_prob_mask(last_pos_id))[None,:].to(token_ids.device)
+
+            # Optional: Apply temperature/top-k/top-p sampling here
+            probs = torch.softmax(next_token_logits/1.0, dim=-1)
+
+            # Apply the prior mask
+            probs = probs * prior
+            # renormalize
+            probs = probs / probs.sum(dim=-1, keepdim=True)
+
+            next_token = torch.multinomial(probs, 1)
+            
+            # Append to sequence
+            token_ids = torch.cat([token_ids, next_token], dim=1)
+            
+            # Optional: Add a progress indicator
+            if i % 10 == 0:
+                print(f"Generated {i}/{position_ids.shape[-1]} tokens")
+
+    token_ids = token_ids[:,1:]
+    position_ids = position_ids[:,:-1]
+    
+    return token_ids, position_ids
+    
+position_ids = torch.arange(0, 1 + 7*300).unsqueeze(0)
+print(position_ids)
+# shuffle position ids
+position_ids = torch.tensor(position_ids[:, torch.randperm(position_ids.shape[1])])
+# add dummy position id to end
+position_ids = torch.cat([position_ids, torch.tensor([[-1]])], dim=1)
+
+token_ids = torch.tensor(tokenizer.tokens_to_ids(["BOS_None"]))[None,...]
+
+tokens = []
+# apply model.forward
+token_ids, position_ids = infer(model, token_ids, position_ids)
+
+#%%
+# decode the sequence
+# sort by argsort of position ids
+arg = torch.argsort(position_ids[0])
+
+print(arg)
+sorted_tokens = token_ids[0, arg].tolist()
+sorted_position_ids = position_ids[0, arg].tolist()
+print(sorted_position_ids)
+
+
+tokens = tokenizer.ids_to_tokens(sorted_tokens)
+print(tokens)
+print(len(tokens))
+sm = tokenizer.tokens_to_midi(tokens)
+print(tokens)
+preview_sm(sm)
+
+#%%
+import torch
+#        0      1      2
 # bos tempo program pitch
-prompt = ["BOS_None", "Tempo_87", "Pitch_Drum50"]
+prompt = ["BOS_None", "Pitch_Drum50"]
 input_ids = torch.tensor(tokenizer.tokens_to_ids(prompt))[None,...]
-position_ids = torch.tensor([0,2,1])[None,...]
+position_ids = torch.tensor([2,1+7])[None,...]
 # increment last position id by 1
 print(position_ids)
 print(position_ids)
@@ -59,8 +155,7 @@ for i in range(10):
 
 # generate a sequence
 out = model.generate(
-    input_ids= input_ids,
-    max_length=2048,
+    max_length=2102,
     do_sample=True,
     pad_token_id=tokenizer.token_to_idx["PAD_None"],
     bos_token_id=tokenizer.token_to_idx["BOS_None"],

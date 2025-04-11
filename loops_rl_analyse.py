@@ -350,7 +350,7 @@ selected_metrics = {
     },
     "fts_pitches": {
         "title": "Pitch Distribution",
-        "bins": 50,
+        "bins": 100-20,
         "range": (20, 100),
         "description": "Distribution of MIDI pitch values",
         "xaxis_label": "MIDI Pitch",
@@ -358,7 +358,7 @@ selected_metrics = {
     },
     "fts_velocities": {
         "title": "Velocity Distribution",
-        "bins": 40,
+        "bins": 20,
         "range": (0, 127),
         "description": "Distribution of MIDI velocity values",
         "xaxis_label": "MIDI Velocity",
@@ -366,7 +366,7 @@ selected_metrics = {
     },
     "ft_dynamic_range": {
         "title": "Velocity Range",
-        "bins": 35,
+        "bins": 20,
         "range": (0, 127),
         "description": "Range of dynamics (loudness)",
         "xaxis_label": "Dynamic Range",
@@ -382,7 +382,7 @@ selected_metrics = {
     },
     "fts_intervals": {
         "title": "Interval Distribution",
-        "bins": 40,
+        "bins": 120,
         "range": (-60, 60),
         "description": "Distribution of melodic intervals",
         "xaxis_label": "Interval Size (semitones)",

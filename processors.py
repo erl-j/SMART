@@ -39,7 +39,7 @@ class RewardManager:
 
     def __call__(self, completions, prompts, return_records=False, **kwargs,):
         # Render completions
-        prompt_and_completions = torch.cat([torch.Tensor(prompts), completions.cpu()], dim=1)
+        prompt_and_completions = torch.cat([torch.Tensor(prompts), completions.cpu()], dim=1).to(torch.long)
 
         records = [{
             "completion": completion, 
@@ -118,6 +118,7 @@ class Processor:
         raise NotImplementedError
             
 
+
 class AudioBoxAesRewardProcessor(Processor):
     def __init__(self,):
         self.aes_predictor = initialize_predictor()
@@ -186,7 +187,31 @@ class MidiTokToSymusicProcessor(Processor):
                 record["sm"] = crop_sm(record["sm"], self.max_beats)
                 record["sm_duration"] = sm_seconds(record["sm"])
         return records
+    
+class CustomTokenizerToSymusicProcessor(Processor):
+    def __init__(self, tokenizer, max_beats):
+        self.tokenizer = tokenizer
+        self.max_beats = max_beats
 
+    def __call__(self, records):
+        for record in records:
+            record["prompt_and_completion_tokens"] = self.tokenizer.ids_to_tokens(record["prompt_and_completion"].tolist())
+            try:
+                record["sm"] = self.tokenizer.tokens_to_midi(record["prompt_and_completion_tokens"])
+            except Exception as e:
+                dummy_sm = symusic.Score()
+                # set tpq to 24
+                dummy_sm.tpq = 24
+                # set tempo to 120
+                dummy_sm.tempos = [symusic.Tempo(0, 120)]
+                dummy_sm.time_signatures = [symusic.TimeSignature(120, 4, 4)]
+                record["sm"] = dummy_sm
+
+            if self.max_beats is not None:
+                record["sm"] = crop_sm(record["sm"], self.max_beats)
+                record["sm_duration"] = sm_seconds(record["sm"])
+        return records
+    
 class SymusicSynthProcessor(Processor):
     def __init__(self, soundfont_path, sample_rate, max_duration_seconds):
         self.synth = Synthesizer(
@@ -296,9 +321,26 @@ class TinySoundfontSynthProcessor(Processor):
                 record["audio_duration"] = record["audio"].shape[1] / self.sample_rate
         return records
 
+class TrackPromptAdherenceRewardProcessor(Processor):
+    def __call__(self, records):
+        for record in records:
+            try:
+                # split tokens into head body
+                # head is everything before the first bar token
+                record["head"] = record["prompt_and_completion_tokens"][:record["prompt_and_completion_tokens"].index("Track_None")]
+
+                record["head_tracks"] = set([x for x in record["head"] if x.startswith("Program_")])
+                
+                # get body tracks from MIDI
+                record["body_tracks"] = [f"Program_Drums" if track.is_drum else f"Program_{track.program}" for track in record["sm"].tracks]
+                
+                record["intersection_over_union_tracks"] = len(record["head_tracks"].intersection(record["body_tracks"])) / len(record["head_tracks"].union(record["body_tracks"]))
+                record["normalized_rewards"]["programs_iou"] = record["intersection_over_union_tracks"]
+            except:
+                print(f"Couldnt compute track intersection over union with prompt tracks for record {record['idx']}")
+        return records
 
 class ProgramPromptAdherenceRewardProcessor(Processor):
-
     def __call__(self, records):
         for record in records:
             try:
@@ -354,12 +396,8 @@ class CLAPPromptRewardProcessor(Processor):
         audio = [record["audio"] for record in records]
         scores = self.score_clap(audio)
         
-
         # rescale from -1 to 1 to 0-1
         norm_scores = (scores + 1) / 2 
-        #
-        
-        # All other samples get 0 by default
         
         # Apply rewards to records
         for i, record in enumerate(records):

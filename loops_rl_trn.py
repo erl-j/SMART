@@ -9,11 +9,13 @@ import os
 from tqdm import tqdm
 import numpy as np
 import random
-from processors import RewardManager, MidiTokToSymusicProcessor, TinySoundfontSynthProcessor, AudioBoxAesRewardProcessor, ProgramPromptAdherenceRewardProcessor, PamRewardProcessor
+from processors import RewardManager, TrackPromptAdherenceRewardProcessor, MidiTokToSymusicProcessor, TinySoundfontSynthProcessor, AudioBoxAesRewardProcessor, ProgramPromptAdherenceRewardProcessor, PamRewardProcessor, CustomTokenizerToSymusicProcessor
 from loops_util import prepare_input
 import os
 import torch
 from tqdm import tqdm
+import symusic
+from pam_prompt_pairs import prompt_pairs
 #%%
 os.environ["WANDB_PROJECT"] = "music-grpo"  # name your W&B project
 os.environ["WANDB_LOG_MODEL"] = "false"
@@ -36,25 +38,24 @@ NUM_TRAIN_STEPS = 1000
 LEARNING_RATE = 1e-4
 SEARCH_SAMPLING_PARAMS = False
 
-BETA = 0.00
+BETA = 0.04
 
 # MODEL = "piano" #"MIL"
 # PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
-MODEL = "piano-4l"
-PROMPT_SOURCE = "procedural-no-starting-note" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
+MODEL = "irma"
+PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 # MODEL = "mil"
 # PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
 SAVE_STEPS = 20
-N_EVAL_PROMPTS=1000
+N_EVAL_PROMPTS=100
 
 BATCH_SIZE=64 if MODEL == "piano" else 32
-
 
 N_PROMPTS = (NUM_TRAIN_STEPS * BATCH_SIZE // NUM_GENERATIONS) * 10
 
 SAMPLE_RATE = 48_000
-SOUNDFONT = "matrix" if MODEL == "mil" else "yamaha"
+SOUNDFONT = "yamaha" if MODEL == "piano" else "matrix"
 
 REWARD_WEIGHTS = {
     "CE": 1.0,
@@ -62,65 +63,13 @@ REWARD_WEIGHTS = {
     # "PC": 0.0,
     # "PQ": 1.0,
     # "programs_iou": 3.0,
-    # "programs_iou": 1.0,
+    "programs_iou": 1.0,
     # "pam_avg": 1.0,
 }
 
 # get latest checkpoint
-OUTPUT_DIR = f"artefacts/all_runs_3/{MODEL}-{PROMPT_SOURCE}/aes-ce-{BETA}-{TEMPERATURE}-{NUM_TRAIN_STEPS}"
+OUTPUT_DIR = f"artefacts/all_runs_3/{MODEL}-{PROMPT_SOURCE}/aes-ce-iou-{BETA}-{TEMPERATURE}-{NUM_TRAIN_STEPS}"
 
-prompt_pairs = [
-    {
-        "shorthand": "glitchless",
-        "positive": "A smooth and continuous texture with seamless transitions and stable audio playback.",
-        "negative": "A glitchy and unstable excerpt with digital artifacts, abrupt cuts, or dropouts."
-    },
-    {
-        "shorthand": "expressive",
-        "positive": "A dynamically rich excerpt with emotional phrasing, subtle articulations, and human-like nuance.",
-        "negative": "A flat and mechanical sequence with rigid articulation, even dynamics, and static energy."
-    },
-    {
-        "shorthand": "naturalfeel",
-        "positive": "A fluid rhythmic feel with organic timing and slight expressive variations in phrasing.",
-        "negative": "A stiff and quantized rhythm with robotic timing and uniform note placements."
-    },
-    {
-        "shorthand": "clarity",
-        "positive": "A clean mix where each instrument is clearly defined and occupies its own space in the spectrum.",
-        "negative": "A muddy and crowded mix where sounds overlap and mask each other."
-    },
-    {
-        "shorthand": "interest",
-        "positive": "An engaging texture with subtle variations, rich timbres, and musical detail.",
-        "negative": "A dull sequence with static timbres and repetitive gestures that feel uninspired."
-    },
-    {
-        "shorthand": "prosound",
-        "positive": "A polished sound with balanced levels, clean frequency distribution, and professional-grade production.",
-        "negative": "A rough and uneven mix with harsh tones, poor balance, and lo-fi characteristics."
-    },
-    {
-        "shorthand": "intent",
-        "positive": "A focused excerpt with coherent phrasing and purposeful musical gestures.",
-        "negative": "An unfocused sequence with scattered gestures and unclear musical direction."
-    },
-    {
-        "shorthand": "groove",
-        "positive": "A tight rhythmic feel with strong pulse, clear subdivisions, and natural momentum.",
-        "negative": "An awkward rhythmic structure with imprecise timing and unstable pulse."
-    },
-    {
-        "shorthand": "realism",
-        "positive": "Instruments that sound lifelike and expressive, with detailed articulation and natural tone.",
-        "negative": "Instruments that sound artificial and static, with generic tone and unrealistic behavior."
-    },
-    {
-        "shorthand": "variation",
-        "positive": "A rich texture with contrasting articulations, subtle shifts, and sonic variety.",
-        "negative": "A uniform texture with repeated gestures and minimal sonic contrast."
-    }
-]
 
 # warn if output dir exists and may be overwritten
 if os.path.exists(OUTPUT_DIR):
@@ -155,6 +104,83 @@ SF_PATH= {
             }[SOUNDFONT]
 
 match MODEL:
+
+    case "irma":
+        MAX_COMPLETION_LENGTH = 2048
+        MAX_BEATS = 16
+        MAX_AUDIO_DURATION = 32
+        checkpoint = "outputs/mt/silvery-forest-28/checkpoint-350000"
+
+        model = transformers.AutoModelForCausalLM.from_pretrained(checkpoint, trust_remote_code=True, torch_dtype="auto")
+        from tokenisation import IrmaTokenizer, IrmaTokenizerConfig
+        tokenizer = IrmaTokenizer.from_json("outputs/mt/silvery-forest-28/tokenizer_config.json")
+
+        match PROMPT_SOURCE:
+            case "dataset":
+                trn_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/trn_subset")
+                trn_ds = trn_ds.shuffle()
+                trn_ds = trn_ds.map(
+                        lambda x: {
+                            "token_ids": tokenizer.midi_to_token_ids(
+                                symusic.Score.from_midi(x["midi_bytes"]), shuffle_tracks=True
+                            )
+                        },
+                        num_proc=16,
+                )
+                trn_ds = trn_ds.select(range(N_PROMPTS))
+
+                tst_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/tst")
+                tst_ds = tst_ds.shuffle()
+                tst_ds = tst_ds.map(
+                        lambda x: {
+                            "token_ids": tokenizer.midi_to_token_ids(
+                                symusic.Score.from_midi(x["midi_bytes"]), shuffle_tracks=True
+                            )
+                        },
+                        num_proc=16,
+                )
+                tst_ds = tst_ds.select(range(N_EVAL_PROMPTS))
+
+                max_prompt_length = 32
+
+                def extract_prompt(token_ids):
+                    tokens = tokenizer.ids_to_tokens(token_ids)
+                    # find index of first token with tempo in it
+                    first_track_idx = next((i for i, token in enumerate(tokens) if token.startswith("Track_")), None)
+                    # crop prompt up to tempo token
+                    if first_track_idx is None:
+                        return None
+                    prompt = token_ids[:first_track_idx+1]
+                    # pad left with PAD tokens until max_prompt_length
+                    prompt =[tokenizer.token_to_idx["PAD_None"]] * (max_prompt_length - 1 - len(prompt)) + [tokenizer.token_to_idx["BOS_None"]] + prompt
+                    return prompt
+                
+                # when using dataset as prompt, we need to prepare the input
+                trn_ds = trn_ds.map(lambda x: {"prompt": extract_prompt(x["token_ids"])})
+                # remove None prompts
+                trn_ds = trn_ds.filter(lambda x: x["prompt"] is not None)
+
+                tst_ds = tst_ds.map(lambda x: {"prompt": extract_prompt(x["token_ids"])})
+                # remove None prompts
+                tst_ds = tst_ds.filter(lambda x: x["prompt"] is not None)
+
+                # print 10 examples from trn_ds
+                for i in range(10):
+                    print(tokenizer.ids_to_tokens(trn_ds[i]["prompt"]))
+
+            case _:
+                raise ValueError("Invalid prompt source for piano model")
+            
+        reward_manager = RewardManager(
+            processors = [
+                CustomTokenizerToSymusicProcessor(tokenizer, max_beats=16),
+                TinySoundfontSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
+                AudioBoxAesRewardProcessor(),
+                TrackPromptAdherenceRewardProcessor(),
+            ],
+            reward_weights = REWARD_WEIGHTS,
+            output_dir=OUTPUT_DIR
+        )
 
     case "piano-long":
         MAX_COMPLETION_LENGTH = 2048
@@ -443,9 +469,15 @@ match MODEL:
 
 class DummyTokenizer():
     def __init__(self,tokenizer):
-        self.pad_token_id = tokenizer.vocab["PAD_None"]
-        self.eos_token_id = tokenizer.vocab["EOS_None"]
-        self.bos_token_id = tokenizer.vocab["BOS_None"]  
+        # check if tokenizer is IRMA or Tanja
+        if isinstance(tokenizer.vocab, list):
+            self.pad_token_id = tokenizer.token_to_idx["PAD_None"]
+            self.eos_token_id = tokenizer.token_to_idx["EOS_None"]
+            self.bos_token_id = tokenizer.token_to_idx["BOS_None"]
+        else:
+            self.pad_token_id = tokenizer.vocab["PAD_None"]
+            self.eos_token_id = tokenizer.vocab["EOS_None"]
+            self.bos_token_id = tokenizer.vocab["BOS_None"]  
     def decode(self, x, **kwargs):
         return x
     def batch_decode(self, x, **kwargs):
