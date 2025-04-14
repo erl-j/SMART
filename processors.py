@@ -325,19 +325,42 @@ class TrackPromptAdherenceRewardProcessor(Processor):
     def __call__(self, records):
         for record in records:
             try:
-                # split tokens into head body
-                # head is everything before the first bar token
+                # Extract prompt tokens before the first Track_None
                 record["head"] = record["prompt_and_completion_tokens"][:record["prompt_and_completion_tokens"].index("Track_None")]
-
-                record["head_tracks"] = set([x for x in record["head"] if x.startswith("Program_")])
                 
-                # get body tracks from MIDI
-                record["body_tracks"] = [f"Program_Drums" if track.is_drum else f"Program_{track.program}" for track in record["sm"].tracks]
+                # Count program occurrences in prompt
+                prompt_histogram = {}
+                for token in record["head"]:
+                    if token.startswith("Program_"):
+                        prompt_histogram[token] = prompt_histogram.get(token, 0) + 1
                 
-                record["intersection_over_union_tracks"] = len(record["head_tracks"].intersection(record["body_tracks"])) / len(record["head_tracks"].union(record["body_tracks"]))
-                record["normalized_rewards"]["programs_iou"] = record["intersection_over_union_tracks"]
-            except:
-                print(f"Couldnt compute track intersection over union with prompt tracks for record {record['idx']}")
+                # Count program occurrences in MIDI output
+                output_histogram = {}
+                for track in record["sm"].tracks:
+                    if len(track.notes)> 0:
+                        program = f"Program_Drums" if track.is_drum else f"Program_{track.program}"
+                        output_histogram[program] = output_histogram.get(program, 0) + 1
+                
+                # Calculate Frequency-Weighted IoU
+                all_programs = set(prompt_histogram) | set(output_histogram)
+                intersection = sum(min(prompt_histogram.get(p, 0), output_histogram.get(p, 0)) for p in all_programs)
+                union = sum(max(prompt_histogram.get(p, 0), output_histogram.get(p, 0)) for p in all_programs)
+                
+                freq_weighted_iou = intersection / union if union > 0 else 0.0
+                record["freq_weighted_iou_tracks"] = freq_weighted_iou
+                record["normalized_rewards"]["programs_iou"] = freq_weighted_iou
+                
+                # Store original set-based IoU for comparison
+                record["head_tracks"] = set(prompt_histogram)
+                record["body_tracks"] = set(output_histogram)
+                record["set_iou_tracks"] = (
+                    len(record["head_tracks"] & record["body_tracks"]) / 
+                    len(record["head_tracks"] | record["body_tracks"])
+                ) if record["head_tracks"] | record["body_tracks"] else 0.0
+                
+            except Exception as e:
+                print(f"Failed to compute Frequency-Weighted IoU for record {record['idx']}: {str(e)}")
+        
         return records
 
 class ProgramPromptAdherenceRewardProcessor(Processor):

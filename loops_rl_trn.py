@@ -30,11 +30,11 @@ GRADIENT_ACCUMULATION_STEPS = 1
 USE_BF16 = True
 NUM_GENERATIONS=8
 
-TEMPERATURE = 1
+TEMPERATURE = 1.0
 NUM_ITERATIONS = 1
 SCALE_REWARDS = True
 
-NUM_TRAIN_STEPS = 1000
+NUM_TRAIN_STEPS = 100
 LEARNING_RATE = 1e-4
 SEARCH_SAMPLING_PARAMS = False
 
@@ -42,20 +42,20 @@ BETA = 0.04
 
 # MODEL = "piano" #"MIL"
 # PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
-MODEL = "irma"
+MODEL = "piano-long"
 PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 # MODEL = "mil"
 # PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
 SAVE_STEPS = 20
-N_EVAL_PROMPTS=100
+N_EVAL_PROMPTS=1000
 
-BATCH_SIZE=64 if MODEL == "piano" else 32
+BATCH_SIZE=32#64 if "piano" in MODEL else 32
 
 N_PROMPTS = (NUM_TRAIN_STEPS * BATCH_SIZE // NUM_GENERATIONS) * 10
 
 SAMPLE_RATE = 48_000
-SOUNDFONT = "yamaha" if MODEL == "piano" else "matrix"
+SOUNDFONT = "yamaha" if "piano" in MODEL else "matrix"
 
 REWARD_WEIGHTS = {
     "CE": 1.0,
@@ -63,12 +63,12 @@ REWARD_WEIGHTS = {
     # "PC": 0.0,
     # "PQ": 1.0,
     # "programs_iou": 3.0,
-    "programs_iou": 1.0,
+    # "programs_iou": 1.0,
     # "pam_avg": 1.0,
 }
 
 # get latest checkpoint
-OUTPUT_DIR = f"artefacts/all_runs_3/{MODEL}-{PROMPT_SOURCE}/aes-ce-iou-{BETA}-{TEMPERATURE}-{NUM_TRAIN_STEPS}"
+OUTPUT_DIR = f"artefacts/all_runs_3/{MODEL}-{PROMPT_SOURCE}/aes-ce-{BETA}-{TEMPERATURE}-{NUM_TRAIN_STEPS}"
 
 
 # warn if output dir exists and may be overwritten
@@ -109,13 +109,48 @@ match MODEL:
         MAX_COMPLETION_LENGTH = 2048
         MAX_BEATS = 16
         MAX_AUDIO_DURATION = 32
-        checkpoint = "outputs/mt/silvery-forest-28/checkpoint-350000"
+        checkpoint = "outputs/mt/silvery-forest-28/checkpoint-850000"
 
         model = transformers.AutoModelForCausalLM.from_pretrained(checkpoint, trust_remote_code=True, torch_dtype="auto")
         from tokenisation import IrmaTokenizer, IrmaTokenizerConfig
         tokenizer = IrmaTokenizer.from_json("outputs/mt/silvery-forest-28/tokenizer_config.json")
 
         match PROMPT_SOURCE:
+
+            #'Tempo_183', 'Program_34', 'Program_Drums', 'Program_30', 'Program_29', 'Track_None',
+
+            case "synth":
+
+                tempo_tokens = [value for value in tokenizer.vocab if value.startswith("Tempo_")]
+
+                synthbass_programs = [38,39]
+                synthlead_programs = [80,81,82,83,84,85,86,87]
+                synthpad_programs = [88,89,90,91,92,93,94,95]
+
+                def gen():
+                    for i in range(N_PROMPTS):
+
+                        programs = [random.choice(synthbass_programs), random.choice(synthlead_programs), random.choice(synthpad_programs)]
+
+                        program_strs = [f"Program_{program}" for program in programs] 
+                        # add Program_Drums
+                        program_strs.append("Program_Drums")
+                        # shuffle programs
+                        program_strs = random.sample(program_strs, len(program_strs))
+
+                        # add bos token
+                        prompt = ["BOS_None"] + [random.choice(tempo_tokens)] + program_strs + ["Track_None"]
+                        # convert to token ids
+                        print(prompt)
+                        prompt = tokenizer.tokens_to_ids(prompt)
+                        print(prompt)
+
+                        yield {"prompt": prompt}
+                trn_ds = Dataset.from_generator(gen)
+                tst_ds = Dataset.from_generator(gen).select(range(N_EVAL_PROMPTS))
+                max_prompt_length = len(trn_ds[0]["prompt"])
+                
+
             case "dataset":
                 trn_ds = Dataset.load_from_disk("data/gmd_loops_2_tokenized_2/trn_subset")
                 trn_ds = trn_ds.shuffle()
@@ -177,6 +212,7 @@ match MODEL:
                 TinySoundfontSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
                 AudioBoxAesRewardProcessor(),
                 TrackPromptAdherenceRewardProcessor(),
+                PamRewardProcessor(sample_rate=SAMPLE_RATE, prompt_configs=prompt_pairs,temperature=0.25)
             ],
             reward_weights = REWARD_WEIGHTS,
             output_dir=OUTPUT_DIR
@@ -184,8 +220,12 @@ match MODEL:
 
     case "piano-long":
         MAX_COMPLETION_LENGTH = 2048
-        MAX_BEATS = 512
         MAX_AUDIO_DURATION = 32
+
+        # MAX_COMPLETION_LENGTH = 256
+        # MAX_AUDIO_DURATION = 10
+
+        MAX_BEATS = 512
 
         # BASE_MODEL_PATH = "lucacasini/metamidipianophi3"
         BASE_MODEL_PATH = "lucacasini/metamidipianophi3_6L_long"
@@ -200,6 +240,43 @@ match MODEL:
         duration_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Duration_")]
 
         match PROMPT_SOURCE:
+            case "dataset":
+                trn_ds = Dataset.load_from_disk("data/dataset_mmd_piano/train")
+                trn_ds = trn_ds.shuffle()
+                trn_ds = trn_ds.select(range(N_PROMPTS))
+
+                tst_ds = Dataset.load_from_disk("data/dataset_mmd_piano/test")
+                tst_ds = tst_ds.shuffle()
+                tst_ds = tst_ds.select(range(N_EVAL_PROMPTS))
+
+                max_prompt_length = 4
+
+                def extract_prompt(example):
+                    tokens = example["tokens"]
+                    # convert to tokens
+                    # tokens = tokenizer._ids_to_tokens(token_ids)
+                    # find first tempo token
+                    first_tempo_token = None
+                    for i, token in enumerate(tokens):
+                        if token.startswith("Tempo_"):
+                            first_tempo_token = token
+                            break
+                    # find first timesig token
+                    first_timesig_token = None
+                    for i, token in enumerate(tokens):
+                        if token.startswith("TimeSig_"):
+                            first_timesig_token = token
+                            break
+                    prompt_tokens = ["Bar_None"] + [first_timesig_token] + ["Position_0"] + [first_tempo_token]
+                    # convert to token ids
+                    prompt_token_ids = tokenizer._tokens_to_ids(prompt_tokens)
+                    # pad left with PAD tokens until max_prompt_length
+                    prompt_token_ids = [tokenizer.vocab["PAD_None"]] * (max_prompt_length - len(prompt_token_ids)) + prompt_token_ids
+                    return {"prompt": prompt_token_ids}
+
+                trn_ds = trn_ds.map(extract_prompt)
+                tst_ds = tst_ds.map(extract_prompt)
+
             case "procedural":
                 def gen():
                     for i in range(N_PROMPTS):
@@ -229,7 +306,6 @@ match MODEL:
                 MidiTokToSymusicProcessor(tokenizer, is_multitrack=False, max_beats=100),
                 TinySoundfontSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
                 AudioBoxAesRewardProcessor(),
-                # CLAPZeroShotClassificationRewardProcessor(sample_rate=SAMPLE_RATE, reference_prompts=["dissonant, low quality, caucophonous music, glitch, midi"], target_prompt="beautiful, high quality, amazing music, natural, calming", temperature=0.25),
                 PamRewardProcessor(sample_rate=SAMPLE_RATE, prompt_configs=prompt_pairs,temperature=0.25)
             ],
             reward_weights = REWARD_WEIGHTS,
@@ -256,6 +332,44 @@ match MODEL:
         duration_tokens = [value for key, value in tokenizer.vocab.items() if key.startswith("Duration_")]
 
         match PROMPT_SOURCE:
+            case "dataset":
+                trn_ds = Dataset.load_from_disk("data/dataset_mmd_piano/train")
+                trn_ds = trn_ds.shuffle()
+                trn_ds = trn_ds.select(range(N_PROMPTS))
+
+                tst_ds = Dataset.load_from_disk("data/dataset_mmd_piano/test")
+                tst_ds = tst_ds.shuffle()
+                tst_ds = tst_ds.select(range(N_EVAL_PROMPTS))
+
+                max_prompt_length = 4
+
+                def extract_prompt(example):
+                    token_ids = example["token_ids"]
+                    # convert to tokens
+                    tokens = tokenizer._ids_to_tokens(token_ids)
+                    # find first tempo token
+                    first_tempo_token = None
+                    for i, token in enumerate(tokens):
+                        if token.startswith("Tempo_"):
+                            first_tempo_token = token
+                            break
+                    # find first timesig token
+                    first_timesig_token = None
+                    for i, token in enumerate(tokens):
+                        if token.startswith("TimeSig_"):
+                            first_timesig_token = token
+                            break
+                    prompt_tokens = ["Bar_None"] + [first_timesig_token] + ["Position_0"] + [first_tempo_token]
+                    # convert to token ids
+                    prompt_token_ids = tokenizer.tokens_to_ids(prompt_tokens)
+                    # pad left with PAD tokens until max_prompt_length
+                    prompt_token_ids = [tokenizer.vocab["PAD_None"]] * (max_prompt_length - len(prompt_token_ids)) + prompt_token_ids
+                    return {"prompt": prompt_token_ids}
+
+                trn_ds = trn_ds.map(extract_prompt)
+                tst_ds = tst_ds.map(extract_prompt)
+
+
             case "procedural":
                 def gen():
                     for i in range(N_PROMPTS):

@@ -9,6 +9,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 outputs
+listening_test/
 
 # C extensions
 *.so

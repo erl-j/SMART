@@ -5,7 +5,9 @@ from util import preview_sm
 from symusic import BuiltInSF3, Synthesizer
 import IPython.display as ipd
 
-checkpoint = "outputs/mt/polar-field-49/checkpoint-125000"
+# checkpoint = "outputs/mt/polar-field-49/checkpoint-125000"
+checkpoint = "outputs/mt/polar-field-49/checkpoint-500000"
+# checkpoint = "outputs/mt/deep-lion-48/checkpoint-500000"
 
 from tokenisation import TanjaTokenizer, TanjaTokenizerConfig
 
@@ -38,7 +40,7 @@ with open("vocab.txt", "w") as f:
 #%%
 import torch
 
-model = model.to("cuda:2")
+model = model.to("cuda:1")
 
 def infer(model, token_ids, position_ids):
     token_ids = token_ids.to(model.device)
@@ -69,7 +71,7 @@ def infer(model, token_ids, position_ids):
             prior = torch.tensor(tokenizer.get_prob_mask(last_pos_id))[None,:].to(token_ids.device)
 
             # Optional: Apply temperature/top-k/top-p sampling here
-            probs = torch.softmax(next_token_logits/1.0, dim=-1)
+            probs = torch.softmax(next_token_logits/0.85, dim=-1)
 
             # Apply the prior mask
             probs = probs * prior

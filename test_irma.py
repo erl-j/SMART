@@ -5,7 +5,7 @@ from util import preview_sm
 from symusic import BuiltInSF3, Synthesizer
 import IPython.display as ipd
 
-checkpoint = "outputs/mt/silvery-forest-28/checkpoint-350000"
+checkpoint = "outputs/mt/silvery-forest-28/checkpoint-650000"
 
 from tokenisation import IrmaTokenizer, IrmaTokenizerConfig
 

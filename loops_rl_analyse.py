@@ -5,9 +5,18 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import symusic
 import muspy
+import numpy as np
+import IPython.display as ipd
+from matplotlib.ticker import PercentFormatter
+from matplotlib import cm
+from mpl_toolkits.mplot3d import Axes3D
+from sklearn.linear_model import LinearRegression
+import seaborn as sns
 # run_path = "artefacts/all_runs_2/piano-procedural/aes-0.04-1-100"
-run_path = "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-ce-0.04-1-200/"
+# run_path = "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-ce-0.04-1-200/"
+run_path = "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-100-10s"
 # run_path = "artefacts/all_runs_2/mil-dataset/pam-iou-0.04-1-100"
+# run_path = "artefacts/all_runs_3/irma-dataset/aes-ce-iou-pam-0.16-0.9-1000/"
 #%%
 # load all logs
 prelogs = pd.read_parquet(run_path + "/pre_eval/eval/rl_logs/0/logs.parquet")
@@ -28,8 +37,12 @@ for col in logs.columns:
         logs = pd.concat([logs, logs[col].apply(pd.Series).add_prefix(col + "_")], axis=1)
         logs.drop(col, axis=1, inplace=True)
 
-#%%
 
+#%%
+# print prompt_and_completion_tokens for pre
+pre_prompt_and_completion_tokens = prelogs["prompt_and_completion_tokens"].iloc[0]
+print("Prompt and completion tokens: ", pre_prompt_and_completion_tokens)
+#%%
 midi = []
 for stage in ["pre", "post"]:
     midi_paths = glob.glob( run_path + f"/{stage}_eval/eval/midi/0/*.mid", recursive=True)
@@ -40,10 +53,7 @@ for stage in ["pre", "post"]:
 midi_df = pd.DataFrame(midi)
 # join logs and midi on reward_step, stage and idx
 logs = logs.merge(midi_df, on=["reward_step", "idx", "stage"], how="inner")
-
 #%%
-
-
 def get_pitches(sm):
     pitches = []
     for track in sm.tracks:
@@ -129,8 +139,6 @@ def get_pitch_range(sm):
         return 0
     return max(pitches) - min(pitches)
 
-
-import numpy as np
 # Helper function to try a calculation and return NaN if it fails
 def try_or_nan(func):
     try:
@@ -158,12 +166,9 @@ logs["ft_number_of_tempo_changes"] = logs["symusic"].apply(lambda x: try_or_nan(
 logs["ft_number_of_time_signature_changes"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: get_number_of_time_signature_changes(x)))
 logs["ft_duration_in_seconds"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: get_duration_in_seconds(x)))
 logs["ft_pitch_range"] = logs["symusic"].apply(lambda x: try_or_nan(lambda: get_pitch_range(x)))
-
-
 #%%
 # get distribution of each metric, find metrics by picking columns that start with "metric_"
 metrics = [ col for col in logs.columns if col.startswith("metric_")]
-
 for metric in metrics:
     plt.figure()
     for system in ["pre", "post"]:
@@ -171,9 +176,7 @@ for metric in metrics:
     plt.title(metric)
     plt.legend()
     plt.show()
-
 #%%
-
 fts = [ col for col in logs.columns if col.startswith("fts_")]
 # these first have to be aggregated by joining all lists 
 for fts_col in fts:
@@ -188,10 +191,7 @@ for fts_col in fts:
     plt.title(fts_col)
     plt.legend()
     plt.show()
-
-
 #%%
-
 ft = [col for col in logs.columns if col.startswith("ft_")]
 # now plot the distribution of of the ft
 # for each column that starts with "ft_" in a single plot. these do not need to be aggregated
@@ -202,8 +202,6 @@ for ft_col in ft:
     plt.title(ft_col)
     plt.legend()
     plt.show()
-
-
 #%%
 # for each "normalized_rewards" column, plot the distribution for pre and post eval in a single histogram
 normalized_rewards = [col for col in logs.columns if "normalized_rewards" in col]
@@ -214,69 +212,32 @@ for rew in normalized_rewards:
     plt.title(rew)
     plt.legend()
     plt.show()
-
-
 #%%
-
 zero_note_logs = logs[logs["metric_num_notes"] == 0]
 nan_note_logs = logs[logs["metric_num_notes"].isna()]
-
-
 # get idx of zero_note_logs
 zero_note_logs_idx = zero_note_logs["idx"].tolist()
 print("Indices of logs with 0 notes: ", zero_note_logs_idx)
-
-#%%
-import IPython.display as ipd
-# playback audio for idx in zero_note_logs_idx:
-for row in zero_note_logs.iterrows():
-    # print midi_path
-    audio_path = row[1]["midi_path"].replace(".mid", ".wav").replace("//", "/").replace("midi", "audio")
-    print(audio_path)
-    ipd.display(ipd.Audio(filename=audio_path, autoplay=True))
-
-
-#%%
-# now same thing for 10 samples from the normal logs
-normal_logs = logs
-
-for row in normal_logs.sample(10).iterrows():
-    # print midi_path
-    audio_path = row[1]["midi_path"].replace(".mid", ".wav").replace("//", "/").replace("midi", "audio")
-    print(audio_path)
-    ipd.display(ipd.Audio(filename=audio_path, autoplay=True))
-
-
-
-#%%
-
 print("Number of logs with 0 notes: ", len(zero_note_logs))
 print("Number of logs with nan notes: ", len(nan_note_logs))
-
-
 # only keep logs where number of notes is not 0 or nan
 filtered_logs = logs[logs["metric_num_notes"].notna() & (logs["metric_num_notes"] != 0)]
-
 print(len(filtered_logs))
 print(len(logs))
-
 # count how many notes are in the pre and post eval
 pre_count = len(filtered_logs[filtered_logs["stage"] == "pre"])
 post_count = len(filtered_logs[filtered_logs["stage"] == "post"])
 print("Pre eval count: ", pre_count)
 print("Post eval count: ", post_count)
 
-# print indices with 0 or nan notes
+#%%
+# count how many have less than 10 notes
+less_than_10_notes = filtered_logs[filtered_logs["metric_num_notes"] < 10]
 
-
+print("Number of logs with less than 10 notes: ", len(less_than_10_notes))
 #%%
 # show and prompt_and_completion_tokens that yielded 0 or nan notes
-logs[logs["metric_num_notes"].isna() | (logs["metric_num_notes"] == 0)][["prompt_and_completion_tokens", "reward_step", "idx", "stage"]].to_csv("artefacts/0_notes.csv")
 #%%
-import matplotlib.pyplot as plt
-import numpy as np
-import seaborn as sns
-from matplotlib.ticker import PercentFormatter
 
 # Define custom names for the pre and post systems
 SYSTEM_NAMES = {
@@ -288,31 +249,22 @@ SYSTEM_NAMES = {
 COLOR_SCHEMES = [
     # 0: Slate and Lilac - elegant, subtle contrast
     ["#536878", "#C8A2C8"],
-    
     # 1: Muted earth tones - natural and calming
     ["#606c38", "#dda15e"],
-    
     # 2: Monochromatic grays - professional and clean
     ["#454545", "#909090"],
-    
     # 3: Dark teal and muted gold - sophisticated contrast
     ["#264653", "#e9c46a"],
-    
     # 4: Forest green and dusty rose - organic and balanced
     ["#2c6e49", "#d68c45"],
-    
     # 5: Navy and coral - classic with a modern twist
     ["#22577a", "#f6bd60"],
-    
     # 6: Charcoal and mint - contemporary and fresh
     ["#2b2d42", "#8d99ae"],
-    
     # 7: Burgundy and sage - rich and subdued
     ["#7d4f50", "#d1b48c"],
-    
     # 8: Indigo and peach - bold yet harmonious
     ["#293b5f", "#f5b971"],
-    
     # 9: Olive and periwinkle - unexpected but complementary
     ["#6b705c", "#a5a58d"]
 ]
@@ -420,13 +372,10 @@ fig.subplots_adjust(hspace=0.4, wspace=0.3)  # More space between subplots
 # Flatten the axes array for easier iteration
 axs = axs.flatten()
 
-
 for i, (metric_key, metric_info) in enumerate(selected_metrics.items()):
     ax = axs[i]
-    
     # Determine whether to use density based on the metric prefix
     use_density = False  # Default to count (not density)
-    
     for j, system in enumerate(["pre", "post"]):
         # Handle metrics that are stored as lists
         if isinstance(filtered_logs[filtered_logs["stage"] == system][metric_key].iloc[0], list):
@@ -489,27 +438,17 @@ plt.savefig('music_metrics_comparison.pdf', dpi=300, bbox_inches='tight')
 plt.savefig('music_metrics_comparison.png', dpi=300, bbox_inches='tight')
 plt.show()
 #%%
-
-
-import seaborn as sns
-import matplotlib.pyplot as plt
-
-
 # print distribution for aes_scores_CE, aes_scores_CU, aes_scores_PC, aes_scores_PQ
 # Set the style
 sns.set(style="whitegrid")
-
 # Create a 4 split histograms for aes_scores_CE, aes_scores_CU, aes_scores_PC, aes_scores_PQ
 plt.figure(figsize=(16, 4))
-
 audiobox_full_names = {
     "CE" : "Content Enjoyment"
     , "CU" : "Content Usefulness"
     , "PC" : "Production Complexity"
     , "PQ" : "Production Quality"
 }
-
-
 for i, rew in enumerate(["aes_scores_CE", "aes_scores_CU", "aes_scores_PC", "aes_scores_PQ"]):
     # plot in one row, no grid
     plt.subplot(1, 4, i+1)
@@ -527,269 +466,6 @@ for i, rew in enumerate(["aes_scores_CE", "aes_scores_CU", "aes_scores_PC", "aes
     # now reduce the number of ticks on the y axis to 5
     plt.gca().yaxis.set_major_locator(plt.MaxNLocator(nbins=4))
 
-
 plt.savefig('aes_scores_comparison.pdf', dpi=300, bbox_inches='tight')
 plt.show()
-
-
 #%%
-
-
-#%%
-# plot average rewards for pre and post eval
-
-
-#%%
-
-logs = glob.glob(run_path + "/rl_logs/**/*.parquet", recursive=True)
-
-logs = [pd.read_parquet(log) for log in logs]
-logs = pd.concat(logs)
-
-
-
-
-
-
-# if normalized_rewards_programs_iou is missing, add it as 0
-if "normalized_rewards_programs_iou" not in logs.columns:
-    logs["normalized_rewards_programs_iou"] = 0
-
-# join logs and midi on reward_step and idx
-
-midi = pd.DataFrame(midi)
-logs = logs.merge(midi, on=["reward_step", "idx"], how="inner")
-
-# plot all normalized rewards over time
-# get field that stra
-normalized_rewards = [col for col in logs.columns if "normalized_rewards" in col]
-
-for rew in normalized_rewards:
-    plt.plot(logs.groupby("reward_step")[rew].mean(), label=rew)
-
-# also include average reward
-plt.plot(logs.groupby("reward_step")["reward"].mean(), label="reward")
-plt.legend()
-plt.show()
-
-n_rewards = len(normalized_rewards)
-
-# show normalized_rewards_pam_avg in a scatter plot
-plt.scatter(logs["reward_step"], logs["normalized_rewards_pam_avg"], alpha=0.1, s=2)
-plt.legend()
-plt.show()
-# fit a line to the data
-import numpy as np
-from sklearn.linear_model import LinearRegression
-X = logs["reward_step"].values.reshape(-1, 1)
-y = logs["normalized_rewards_pam_avg"].values
-reg = LinearRegression().fit(X, y)
-plt.scatter(X, y, alpha=0.1)
-plt.plot(X, reg.predict(X), c="red")
-plt.show()
-
-
-
-
-# for 
-
-# # for each reward, plot the distribution of the reward across steps using subplots 
-# for step in logs["reward_step"].unique():
-#     plt.figure()
-#     for i, rew in enumerate(normalized_rewards):
-#         plt.subplot(n_rewards, 1, i+1)
-#         plt.hist(logs[logs["reward_step"] == step][rew], bins=10, range=(0,1))
-#         plt.title(rew)
-#     plt.show()
-
-
-
-
-
-
-
-
-# %%
-import symusic
-
-logs["midi"] = logs["midi_path"].apply(lambda x: symusic.Score(x))
-# print all columns
-for col in logs.columns:
-    print(col)
-
-# print reward distribution
-print(logs["reward"].describe())
-
-# make scatter plot of steps vs reward
-import matplotlib.pyplot as plt
-plt.scatter(logs["reward_step"], logs["reward"], alpha=0.1)
-plt.show()
-
-# plot scatter plot of CE rewards
-plt.scatter(logs["reward_step"], logs["normalized_rewards_CE"], alpha=0.1)
-plt.show()
-
-
-#%%
-logs["n_notes"] = logs["midi"].apply(lambda x: x.note_num())
-
-# plot number of notes over time
-plt.scatter(logs["reward_step"], logs["n_notes"], alpha=0.02)
-plt.show()
-#%%
-
-# now get response length in tokens
-logs["completion_length"] = logs["completion"].apply(lambda x: len(x))
-
-# plot response length over time
-plt.scatter(logs["reward_step"], logs["completion_length"], alpha=0.01)
-plt.show()
-
-# plot number of notes over time
-#%%
-# plot clap_score_raw over tim
-
-plt.scatter(logs["reward_step"], logs["normalized_rewards_clap_clf"], alpha=0.1)
-plt.show()
-
-# fit line
-import numpy as np
-from sklearn.linear_model import LinearRegression
-X = logs["reward_step"].values.reshape(-1, 1)
-y = logs["normalized_rewards_clap_clf"].values
-reg = LinearRegression().fit(X, y)
-plt.scatter(X, y, alpha=0.1)
-plt.plot(X, reg.predict(X), c="red")
-plt.show()
-#%%
-
-
-print(logs["normalized_rewards_programs_iou"].describe())
-# plot ce, cu, pc, pq mean across steps
-plt.plot(logs.groupby("reward_step")["normalized_rewards_CE"].mean(), c="red", label="CE")
-plt.plot(logs.groupby("reward_step")["normalized_rewards_CU"].mean(), c="teal", label="CU")
-plt.plot(logs.groupby("reward_step")["normalized_rewards_programs_iou"].mean(), c="green", label="IOU")
-plt.plot(logs.groupby("reward_step")["normalized_rewards_PC"].mean(), c="orange", label="PC")
-plt.plot(logs.groupby("reward_step")["normalized_rewards_PQ"].mean(), c="purple", label="PQ")
-plt.plot(logs.groupby("reward_step")["normalized_rewards_clap_clf"].mean(), c="black", label="clap")
-# plot average reward in blue
-# plt.plot(logs.groupby("reward_step")["reward"].mean(), c="blue", label="reward")
-plt.legend()
-plt.title("Mean reward across steps")
-plt.show()
-
-
-# fit line to reward vs step
-import numpy as np
-from sklearn.linear_model import LinearRegression
-X = logs["reward_step"].values.reshape(-1, 1)
-y = logs["normalized_rewards_CE"].values
-reg = LinearRegression().fit(X, y)
-plt.scatter(X, y, alpha=0.1)
-plt.plot(X, reg.predict(X), c="red")
-plt.show()
-
-#%%
-
-# make a ridge plot of the rewards 
-import seaborn as sns
-import matplotlib.pyplot as plt
-sns.kdeplot(data=logs, x="reward", hue="reward_step", fill=True, alpha=0.5)
-plt.show()
-
-
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib import cm
-from mpl_toolkits.mplot3d import Axes3D
-import pandas as pd
-
-# Assuming logs is your DataFrame with reward and reward_step columns
-# First, ensure reward_step is treated as numeric if it isn't already
-logs['reward_step'] = pd.to_numeric(logs['reward_step'])
-
-# Create a grid for the 3D plot
-unique_steps = np.sort(logs['reward_step'].unique())
-reward_range = np.linspace(logs['reward'].min(), logs['reward'].max(), 100)
-
-# Create meshgrid for 3D plotting
-X, Y = np.meshgrid(unique_steps, reward_range)
-
-# Create empty array to hold histogram-based density values
-density_matrix = np.zeros((len(reward_range), len(unique_steps)))
-
-# Fill the density matrix using histograms instead of KDE
-for i, step in enumerate(unique_steps):
-    step_data = logs[logs['reward_step'] == step]['reward']
-    if len(step_data) > 0:
-        # Create histogram for this step
-        hist, bin_edges = np.histogram(step_data, bins=50, 
-                                      range=(logs['reward'].min(), logs['reward'].max()),
-                                      density=True)
-        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-        
-        # Interpolate histogram values to our common grid
-        density = np.interp(reward_range, bin_centers, hist, left=0, right=0)
-        density_matrix[:, i] = density
-
-# Create the 3D plot
-fig = plt.figure(figsize=(12, 8))
-ax = fig.add_subplot(111, projection='3d')
-
-# Plot the contour
-contour = ax.contour3D(X, Y, density_matrix, 20, cmap=cm.viridis)
-
-# Add a color bar
-fig.colorbar(contour, ax=ax, shrink=0.5, aspect=5)
-
-# Set labels
-ax.set_xlabel('Reward Step (Time)')
-ax.set_ylabel('Reward Value')
-ax.set_zlabel('Density')
-ax.set_title('3D Contour Plot of Reward Distribution Evolution')
-
-# Adjust viewing angle for better visualization
-ax.view_init(30, 45)
-
-plt.tight_layout()
-plt.show()
-
-
-
-#%%
-
-# lets make a heatmap of the reward distribution
-import seaborn as sns
-import matplotlib.pyplot as plt
-import numpy as np
-
-# create a heatmap of the reward distribution across time
-# x axis is reward_step, y axis is reward, color is density
-# first create a 2d histogram of the rewards2
-
-hist, xedges, yedges = np.histogram2d(logs["reward_step"], logs["reward"], bins=(100,10), range=[[0, 100], [0, 1]])
-# create a meshgrid
-X, Y = np.meshgrid(xedges, yedges)
-# plot the heatmap
-plt.pcolormesh(X, Y, hist.T, cmap="viridis")
-plt.colorbar()
-plt.show()
-
-# %%
-
-# take logs of first step only
-logs_first = logs#[logs["reward_step"] == 0]
-for rew in ["CE", "CU", "PC", "PQ"]:
-    # scatter plot of clap score clf vs ce
-    plt.scatter(logs_first["normalized_rewards_clap_clf"], logs_first[f"normalized_rewards_{rew}"], alpha=0.5, s=1)
-    # set x and y limits to 0,1
-    plt.xlim(0,1)
-    plt.ylim(0,1)
-    # label axes
-    plt.xlabel("clap clf")
-    plt.ylabel(rew)
-    plt.show()
-
-
-# now same for clap score clf vs iou
-# %%

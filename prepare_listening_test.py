@@ -10,8 +10,14 @@ import muspy
 # load all logs
 
 
-pre_run = "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-ce-0.04-1-1000/pre_eval/eval/"
-post_run = "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-ce-0.04-1-1000/post_eval/eval/"
+# pre_run = "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-ce-0.04-1-1000/pre_eval/eval/"
+# post_run = "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-ce-0.04-1-1000/post_eval/eval/"
+
+# run = "artefacts/all_runs_3/irma-synth/aes-ce-iou-0.04-1.0-200"
+# run = "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-200"
+run = "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-100-10s"
+pre_run = f"{run}/pre_eval/eval/"
+post_run = f"{run}/post_eval/eval/"
 
 prelogs = pd.read_parquet(f"{pre_run}/rl_logs/0/logs.parquet")
 print("Rows in pre eval: ", len(prelogs))

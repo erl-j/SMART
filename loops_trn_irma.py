@@ -54,6 +54,8 @@ preview_sm(symusic.Score.from_midi(trn_ds[idx]['midi_bytes']))
 
 tokens = tokenizer.midi_to_tokens(symusic.Score.from_midi(trn_ds[idx]['midi_bytes']), shuffle_tracks=True)
 
+print(f"Tokens: {tokens}")
+
 # turn back into midi
 midi = tokenizer.tokens_to_midi(tokens)
 preview_sm(midi)
