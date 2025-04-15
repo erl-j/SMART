@@ -266,14 +266,19 @@ COLOR_SCHEMES = [
     # 8: Indigo and peach - bold yet harmonious
     ["#293b5f", "#f5b971"],
     # 9: Olive and periwinkle - unexpected but complementary
-    ["#6b705c", "#a5a58d"]
+    ["#6b705c", "#a5a58d"],
+    # use a strong rgb blue and red
+    ["#1f77b4", "#ff7f0e"],
 ]
 
 # Select color scheme by index (0-9)
-COLOR_SCHEME_INDEX = 0  # Change this to select a different color scheme
+COLOR_SCHEME_INDEX = -1  # Change this to select a different color scheme
 
 # Set color scheme based on selection
-colors = COLOR_SCHEMES[COLOR_SCHEME_INDEX]
+# colors = COLOR_SCHEMES[COLOR_SCHEME_INDEX]
+
+# use set2
+colors = cm.get_cmap('Set1').colors
 
 selected_metrics = {
     "metric_num_notes": {
@@ -300,6 +305,14 @@ selected_metrics = {
         "xaxis_label": "Empty Beat Rate",
         "yaxis_label": "Number of Tracks"
     },
+        "fts_intervals": {
+        "title": "Interval Distribution",
+        "bins": 120,
+        "range": (-60, 60),
+        "description": "Distribution of melodic intervals",
+        "xaxis_label": "Interval Size (semitones)",
+        "yaxis_label": "Number of Notes"
+    },
     "fts_pitches": {
         "title": "Pitch Distribution",
         "bins": 100-20,
@@ -307,6 +320,23 @@ selected_metrics = {
         "description": "Distribution of MIDI pitch values",
         "xaxis_label": "MIDI Pitch",
         "yaxis_label": "Number of Notes"
+    },
+    "ft_pitch_range": {
+        "title": "Pitch Range",
+        "bins": 30,
+        "range": (0, 70),
+        "description": "Range between lowest and highest pitch",
+        "xaxis_label": "Pitch Range (semitones)",
+        "yaxis_label": "Number of Tracks"
+    },
+
+    "metric_scale_consistency": {
+        "title": "Scale Consistency",
+        "bins": 30,
+        "range": (0.65, 1.0),
+        "description": "Adherence to scale patterns",
+        "xaxis_label": "Scale Consistency Score",
+        "yaxis_label": "Number of Tracks"
     },
     "fts_velocities": {
         "title": "Velocity Distribution",
@@ -324,30 +354,7 @@ selected_metrics = {
         "xaxis_label": "Dynamic Range",
         "yaxis_label": "Number of Tracks"
     },
-    "ft_pitch_range": {
-        "title": "Pitch Range",
-        "bins": 30,
-        "range": (0, 70),
-        "description": "Range between lowest and highest pitch",
-        "xaxis_label": "Pitch Range (semitones)",
-        "yaxis_label": "Number of Tracks"
-    },
-    "fts_intervals": {
-        "title": "Interval Distribution",
-        "bins": 120,
-        "range": (-60, 60),
-        "description": "Distribution of melodic intervals",
-        "xaxis_label": "Interval Size (semitones)",
-        "yaxis_label": "Number of Notes"
-    },
-    "metric_scale_consistency": {
-        "title": "Scale Consistency",
-        "bins": 30,
-        "range": (0.65, 1.0),
-        "description": "Adherence to scale patterns",
-        "xaxis_label": "Scale Consistency Score",
-        "yaxis_label": "Number of Tracks"
-    }
+  
 }
 
 # Set up the style for a clean, minimalist appearance
@@ -357,9 +364,18 @@ sns.set_context("paper", font_scale=1.2)
 # Turn off the grid
 plt.rcParams['axes.grid'] = False
 
+# set seaborn theme to light grid
+sns.set_theme(style="ticks")
+
+# set background to light gray colour
+plt.rcParams['axes.facecolor'] = '#f0f0f0' 
+
+font = "Arial"
 # Set a nicer font
-plt.rcParams['font.family'] = 'Arial'
+plt.rcParams['font.family'] = font
 plt.rcParams['font.size'] = 11
+
+sns.set(font="Verdana")
 
 # Create the figure
 fig, axs = plt.subplots(3, 3, figsize=(15, 12))
@@ -412,9 +428,9 @@ for i, (metric_key, metric_info) in enumerate(selected_metrics.items()):
                    label=f"{SYSTEM_NAMES[system]}")  # Use custom system name
     
     # Add titles and labels with better descriptions and enhanced styling
-    ax.set_title(metric_info["title"], fontsize=14, fontweight='bold', fontfamily='Arial')
-    ax.set_xlabel(metric_info["xaxis_label"], fontsize=12, fontfamily='Arial')  # Use the new xaxis_label
-    ax.set_ylabel(metric_info["yaxis_label"], fontsize=12, fontfamily='Arial')  # Use the new yaxis_label
+    ax.set_title(metric_info["title"], fontsize=14, fontweight='bold', fontfamily=font)
+    ax.set_xlabel(metric_info["xaxis_label"], fontsize=12, fontfamily=font)  # Use the new xaxis_label
+    ax.set_ylabel(metric_info["yaxis_label"], fontsize=12, fontfamily=font)  # Use the new yaxis_label
     
     # Add a legend with automatic positioning to avoid overlapping with data
     # Add a box around the legend and set its background to white to avoid grid interference

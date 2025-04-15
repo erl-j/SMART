@@ -16,8 +16,11 @@ import muspy
 # run = "artefacts/all_runs_3/irma-synth/aes-ce-iou-0.04-1.0-200"
 # run = "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-200"
 run = "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-100-10s"
-pre_run = f"{run}/pre_eval/eval/"
-post_run = f"{run}/post_eval/eval/"
+run2 = "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-200-10s"
+# pre_run = f"{run}/pre_eval/eval/"
+# post_run = f"{run}/post_eval/eval/"
+pre_run = f"{run}/post_eval/eval/"
+post_run = f"{run2}/post_eval/eval/"
 
 prelogs = pd.read_parquet(f"{pre_run}/rl_logs/0/logs.parquet")
 print("Rows in pre eval: ", len(prelogs))
@@ -67,7 +70,6 @@ audio, sr = torchaudio.load(logs["audio_path"].iloc[0])
 
 display(Audio(audio.numpy(), rate=sr))
    
-#%%
 
 # print one row
 

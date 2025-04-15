@@ -34,7 +34,7 @@ TEMPERATURE = 1.0
 NUM_ITERATIONS = 1
 SCALE_REWARDS = True
 
-NUM_TRAIN_STEPS = 100
+NUM_TRAIN_STEPS = 10000
 LEARNING_RATE = 1e-4
 SEARCH_SAMPLING_PARAMS = False
 
@@ -48,9 +48,9 @@ PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "pia
 # PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
 SAVE_STEPS = 20
-N_EVAL_PROMPTS=1000
+N_EVAL_PROMPTS=10
 
-BATCH_SIZE=32#64 if "piano" in MODEL else 32
+BATCH_SIZE=64#64 if "piano" in MODEL else 32
 
 N_PROMPTS = (NUM_TRAIN_STEPS * BATCH_SIZE // NUM_GENERATIONS) * 10
 
@@ -68,7 +68,7 @@ REWARD_WEIGHTS = {
 }
 
 # get latest checkpoint
-OUTPUT_DIR = f"artefacts/all_runs_3/{MODEL}-{PROMPT_SOURCE}/aes-ce-{BETA}-{TEMPERATURE}-{NUM_TRAIN_STEPS}"
+OUTPUT_DIR = f"artefacts/all_runs_4/{MODEL}-{PROMPT_SOURCE}/aes-ce-{BETA}-{TEMPERATURE}-{NUM_TRAIN_STEPS}-10s"
 
 
 # warn if output dir exists and may be overwritten
@@ -219,11 +219,11 @@ match MODEL:
         )
 
     case "piano-long":
-        MAX_COMPLETION_LENGTH = 2048
-        MAX_AUDIO_DURATION = 32
+        # MAX_COMPLETION_LENGTH = 2048
+        # MAX_AUDIO_DURATION = 32
 
-        # MAX_COMPLETION_LENGTH = 256
-        # MAX_AUDIO_DURATION = 10
+        MAX_COMPLETION_LENGTH = 256
+        MAX_AUDIO_DURATION = 10
 
         MAX_BEATS = 512
 

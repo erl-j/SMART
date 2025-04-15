@@ -10,7 +10,7 @@ __pycache__/
 *$py.class
 outputs
 listening_test/
-
+soundfont_renders/
 # C extensions
 *.so
 

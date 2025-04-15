@@ -12,11 +12,7 @@ from matplotlib import cm
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.linear_model import LinearRegression
 import seaborn as sns
-# run_path = "artefacts/all_runs_2/piano-procedural/aes-0.04-1-100"
-# run_path = "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-ce-0.04-1-200/"
 run_path = "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-100-10s"
-# run_path = "artefacts/all_runs_2/mil-dataset/pam-iou-0.04-1-100"
-# run_path = "artefacts/all_runs_3/irma-dataset/aes-ce-iou-pam-0.16-0.9-1000/"
 #%%
 # load all logs
 prelogs = pd.read_parquet(run_path + "/pre_eval/eval/rl_logs/0/logs.parquet")
@@ -57,25 +53,29 @@ SF_PATH = "soundfonts/Yamaha-C5-Salamander-JNv5_1.sf2"
 
 SAMPLE_RATE = 48_000
 MAX_AUDIO_DURATION = 10
+MAX_LENGTH = 512
+MIN_DURATION = 8
+MAX_EMPTY_BEAT_RATE = 0.00
 
 processor = TinySoundfontSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION)
 
-device = "cuda:2"
+device = "cuda:4"
 model.to(device)
 
 # get 15 random samples from prelogs
 sample_size = 15
-sampled_prelogs = prelogs.sample(sample_size, random_state=0)
+sampled_prelogs = prelogs.sample(sample_size, random_state=42)
 
 import os
 os.makedirs("listening_test", exist_ok=True)
 
+#%%
 prompt_index = 0
 for i, row in sampled_prelogs.iterrows():
     attempt = -1
     empty_beat_rate = 1
     duration = 0
-    while empty_beat_rate > 0 and duration < 5:
+    while empty_beat_rate > MAX_EMPTY_BEAT_RATE or duration < MIN_DURATION:
         attempt += 1
         # print prompt_and_completion_tokens for pre
         prompt_token_ids = row["prompt"]
@@ -86,7 +86,7 @@ for i, row in sampled_prelogs.iterrows():
 
         output = model.generate(
             input_ids=torch.tensor(prompt_token_ids)[None,...].to(device),
-            max_length=512,
+            max_length=MAX_LENGTH,
             do_sample=True,
             temperature=1.0,
             num_return_sequences=1,
@@ -98,6 +98,10 @@ for i, row in sampled_prelogs.iterrows():
         print("Output tokens: ", output_tokens)
         # convert to midi
         sm = tokenizer.decode(output.tolist())
+
+        if sm.note_num() == 0:
+            print("No notes in generated sequence")
+            continue
 
         with tempfile.NamedTemporaryFile(suffix=".mid") as f:
             sm.dump_midi(f.name)
@@ -118,6 +122,7 @@ for i, row in sampled_prelogs.iterrows():
     # save audio to file
     prompt_index += 1
 
+
     
 #%%
 
@@ -128,7 +133,7 @@ for i, row in sampled_prelogs.iterrows():
     attempt = -1
     empty_beat_rate = 1
     duration = 0
-    while empty_beat_rate > 0 and duration < 5:
+    while empty_beat_rate > MAX_EMPTY_BEAT_RATE or duration < MIN_DURATION:
         attempt += 1
         # print prompt_and_completion_tokens for pre
         prompt_token_ids = row["prompt"]
@@ -139,7 +144,7 @@ for i, row in sampled_prelogs.iterrows():
 
         output = model.generate(
             input_ids=torch.tensor(prompt_token_ids)[None,...].to(device),
-            max_length=512,
+            max_length=MAX_LENGTH,
             do_sample=True,
             temperature=1.0,
             num_return_sequences=1,
@@ -151,6 +156,10 @@ for i, row in sampled_prelogs.iterrows():
         print("Output tokens: ", output_tokens)
         # convert to midi
         sm = tokenizer.decode(output.tolist())
+
+        if sm.note_num() == 0:
+            print("No notes in generated sequence")
+            continue
 
         with tempfile.NamedTemporaryFile(suffix=".mid") as f:
             sm.dump_midi(f.name)
