@@ -15,7 +15,7 @@ import os
 import torch
 from tqdm import tqdm
 import symusic
-from pam_prompt_pairs import prompt_pairs
+from pam_prompt_pairs import prompt_pairs, piano_prompt_pairs
 #%%
 os.environ["WANDB_PROJECT"] = "music-grpo"  # name your W&B project
 os.environ["WANDB_LOG_MODEL"] = "false"
@@ -34,7 +34,7 @@ TEMPERATURE = 1.0
 NUM_ITERATIONS = 1
 SCALE_REWARDS = True
 
-NUM_TRAIN_STEPS = 10000
+NUM_TRAIN_STEPS = 100
 LEARNING_RATE = 1e-4
 SEARCH_SAMPLING_PARAMS = False
 
@@ -48,7 +48,7 @@ PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "pia
 # PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
 SAVE_STEPS = 20
-N_EVAL_PROMPTS=10
+N_EVAL_PROMPTS=1000
 
 BATCH_SIZE=64#64 if "piano" in MODEL else 32
 
@@ -58,9 +58,9 @@ SAMPLE_RATE = 48_000
 SOUNDFONT = "yamaha" if "piano" in MODEL else "matrix"
 
 REWARD_WEIGHTS = {
-    "CE": 1.0,
+    # "CE": 1.0,
     # "CU": 1.0,
-    # "PC": 0.0,
+    "PC": 1.0,
     # "PQ": 1.0,
     # "programs_iou": 3.0,
     # "programs_iou": 1.0,
@@ -68,7 +68,7 @@ REWARD_WEIGHTS = {
 }
 
 # get latest checkpoint
-OUTPUT_DIR = f"artefacts/all_runs_4/{MODEL}-{PROMPT_SOURCE}/aes-ce-{BETA}-{TEMPERATURE}-{NUM_TRAIN_STEPS}-10s"
+OUTPUT_DIR = f"artefacts/all_runs_4/{MODEL}-{PROMPT_SOURCE}/aes-pc-{BETA}-{TEMPERATURE}-{NUM_TRAIN_STEPS}-10s"
 
 
 # warn if output dir exists and may be overwritten
@@ -306,7 +306,7 @@ match MODEL:
                 MidiTokToSymusicProcessor(tokenizer, is_multitrack=False, max_beats=100),
                 TinySoundfontSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
                 AudioBoxAesRewardProcessor(),
-                PamRewardProcessor(sample_rate=SAMPLE_RATE, prompt_configs=prompt_pairs,temperature=0.25)
+                PamRewardProcessor(sample_rate=SAMPLE_RATE, prompt_configs=piano_prompt_pairs,temperature=0.25)
             ],
             reward_weights = REWARD_WEIGHTS,
             output_dir=OUTPUT_DIR

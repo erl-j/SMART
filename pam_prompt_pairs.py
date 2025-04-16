@@ -50,3 +50,57 @@ prompt_pairs = [
         "negative": "A uniform texture with repeated gestures and minimal sonic contrast."
     }
 ]
+
+
+piano_prompt_pairs = [
+    {
+        "shorthand": "glitchless",
+        "positive": "A smooth and continuous piano performance with seamless transitions and stable audio playback, creating a pristine listening experience.",
+        "negative": "A piano recording interrupted by digital artifacts, abrupt cuts, stutters, and dropouts that disrupt the musical flow."
+    },
+    {
+        "shorthand": "expressive",
+        "positive": "A dynamically rich piano performance with emotional phrasing, subtle pedaling, varied touch, and human-like expressive nuance throughout.",
+        "negative": "A piano sequence with rigid articulation, even dynamics, and static energy that lacks emotional depth and interpretive variation."
+    },
+    {
+        "shorthand": "naturalfeel",
+        "positive": "A fluid pianistic touch with organic timing, natural rubato, and expressive variations in phrasing that convey genuine human musicality.",
+        "negative": "A piano rhythm with mechanical timing and uniform note placements that miss the natural ebb and flow of musical expression."
+    },
+    {
+        "shorthand": "clarity",
+        "positive": "A pristine piano recording where each register is clearly defined, with balanced voicing and clean separation between bass, middle, and treble ranges.",
+        "negative": "A piano sound where registers blend together inappropriately, with unclear voicing and excessive pedaling that obscures melodic lines."
+    },
+    {
+        "shorthand": "interest",
+        "positive": "An engaging piano texture with subtle dynamic variations, rich tonal colors, and thoughtful musical details that captivate listener attention.",
+        "negative": "A piano sequence with monotonous touch, limited tonal range, and repetitive gestures that fail to engage or inspire the listener."
+    },
+    {
+        "shorthand": "prosound",
+        "positive": "A professionally recorded piano sound with balanced levels, natural resonance, and concert-hall quality that captures the full tonal spectrum.",
+        "negative": "A piano recording with uneven levels, distorted resonance, and thin or harsh tonal characteristics that diminish the listening experience."
+    },
+    {
+        "shorthand": "intent",
+        "positive": "A focused piano performance with coherent musical phrasing, clear structural direction, and purposeful interpretive choices throughout.",
+        "negative": "A piano improvisation with scattered musical ideas, uncertain phrasing, and ambiguous interpretive direction that lacks cohesion."
+    },
+    {
+        "shorthand": "groove",
+        "positive": "A piano performance with precise rhythmic feel, strong sense of pulse, natural swing or lilt, and compelling forward momentum.",
+        "negative": "A piano performance with inconsistent timing, erratic tempo control, and unstable pulse that compromises rhythmic integrity."
+    },
+    {
+        "shorthand": "realism",
+        "positive": "Piano sound that captures the authentic character of a real instrument, with natural hammer action, string resonance, and true acoustic properties.",
+        "negative": "Piano sound with artificial tonal characteristics, mechanical response patterns, and uniform timbre that reveals its synthetic origins."
+    },
+    {
+        "shorthand": "variation",
+        "positive": "A richly varied piano texture with contrasting articulations, thoughtful dynamic shaping, and diverse playing techniques throughout the piece.",
+        "negative": "A piano texture with uniform articulation, minimal dynamic contrast, and repetitive playing techniques that create a monotonous effect."
+    }
+]

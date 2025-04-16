@@ -13,6 +13,7 @@ listening_test/
 soundfont_renders/
 # C extensions
 *.so
+plots/
 
 # Distribution / packaging
 .Python
