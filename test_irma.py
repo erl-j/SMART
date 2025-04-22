@@ -5,7 +5,7 @@ from util import preview_sm
 from symusic import BuiltInSF3, Synthesizer
 import IPython.display as ipd
 
-checkpoint = "outputs/mt/silvery-forest-28/checkpoint-650000"
+checkpoint = "outputs/mt/silvery-forest-28/copies/checkpoint-850000"
 
 from tokenisation import IrmaTokenizer, IrmaTokenizerConfig
 
@@ -42,7 +42,7 @@ out = model.generate(
     bos_token_id=tokenizer.token_to_idx["BOS_None"],
     eos_token_id=tokenizer.token_to_idx["EOS_None"],
     num_return_sequences=1,
-    temperature=0.9,
+    temperature=1.0,
     use_cache=True
     # top_k=1,
     # top_p=0.95,
@@ -143,7 +143,7 @@ out = model.generate(
     bos_token_id=tokenizer.token_to_idx["BOS_None"],
     eos_token_id=tokenizer.token_to_idx["EOS_None"],
     num_return_sequences=1,
-    temperature=0.9,
+    temperature=1.0,
     use_cache=True
 )
 

@@ -9,7 +9,7 @@ import os
 from tqdm import tqdm
 import numpy as np
 import random
-from processors import RewardManager, TrackPromptAdherenceRewardProcessor, MidiTokToSymusicProcessor, TinySoundfontSynthProcessor, AudioBoxAesRewardProcessor, ProgramPromptAdherenceRewardProcessor, PamRewardProcessor, CustomTokenizerToSymusicProcessor
+from processors import RewardManager, TrackPromptAdherenceRewardProcessor, MidiTokToSymusicProcessor, TinySoundfontSynthProcessor, AudioBoxAesRewardProcessor, ProgramPromptAdherenceRewardProcessor, PamRewardProcessor, CustomTokenizerToSymusicProcessor, ScaleConsistencyReward
 from loops_util import prepare_input
 import os
 import torch
@@ -34,7 +34,7 @@ TEMPERATURE = 1.0
 NUM_ITERATIONS = 1
 SCALE_REWARDS = True
 
-NUM_TRAIN_STEPS = 200
+NUM_TRAIN_STEPS = 1000
 LEARNING_RATE = 1e-4
 SEARCH_SAMPLING_PARAMS = False  
 SCHEDULE_TYPE = "linear"
@@ -42,15 +42,15 @@ BETA = 0.04
 
 # MODEL = "piano" #"MIL"
 # PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
-MODEL = "piano-4l"
+MODEL = "irma"
 PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 # MODEL = "mil"
 # PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
 SAVE_STEPS = 20
-N_EVAL_PROMPTS=1000
+N_EVAL_PROMPTS=100
 
-BATCH_SIZE=64#64 if "piano" in MODEL else 32
+BATCH_SIZE=32#64 if "piano" in MODEL else 32
 
 N_PROMPTS = (NUM_TRAIN_STEPS * BATCH_SIZE // NUM_GENERATIONS) * 10
 
@@ -59,11 +59,12 @@ SOUNDFONT = "yamaha" if "piano" in MODEL else "matrix"
 
 REWARD_WEIGHTS = {
     "CE": 1.0,
+    "scale_consistency": 1.0,
     # "CU": 1.0,
     # "PC": 1.0,
     # "PQ": 1.0,
     # "programs_iou": 3.0,
-    # "programs_iou": 1.0,
+    "programs_iou": 1.0,
     # "pam_avg": 1.0,
 }
 

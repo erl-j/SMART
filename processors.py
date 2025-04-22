@@ -21,6 +21,7 @@ from joblib import Parallel, delayed, parallel_backend
 import threading
 import einops
 from mad_metric import compute_mad
+import muspy
 
 class RewardManager:
     def __init__(self, processors, reward_weights, output_dir):
@@ -116,8 +117,29 @@ class Processor:
         Takes a list of records and returns a list of records of the same length with additional fields
         '''
         raise NotImplementedError
-            
 
+class ScaleConsistencyReward(Processor):
+
+    def get_scale_consistency(self,midi_path):
+        """
+        Calculate scale consistency for a given record.
+        
+        Args:
+            record: A dictionary containing the MIDI data and other information
+            
+        Returns:
+            A float representing the scale consistency score
+        """
+        # Extract the MIDI data from the record
+        midi_data = muspy.read_midi(midi_path)
+        return muspy.scale_consistency(midi_data)
+
+    def __call__(self, records):
+        for record in records:
+            with tempfile.NamedTemporaryFile(suffix=".mid") as f:
+                record["sm"].dump_midi(f.name)
+                record["scale_consistency"] = self.get_scale_consistency(f.name)
+                record["normalized_rewards"]["scale_consistency"] = record["scale_consistency"]
 
 class AudioBoxAesRewardProcessor(Processor):
     def __init__(self,):
