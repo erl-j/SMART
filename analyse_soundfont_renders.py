@@ -10,7 +10,7 @@ for subdir in subdirs:
     print(subdir)
 
 # soundfonts to icnlude
-soundfonts = ["musescore", "fluid", "sgm", "yamaha", "grandeur"]
+soundfonts = ["musescore", "fluid", "sgm", "yamaha", "grandeur", "matrix"]
 # exlclude subdirs that dont contain soundfonts
 subdirs = [subdir for subdir in subdirs if any(sf in subdir for sf in soundfonts)]
 

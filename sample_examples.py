@@ -12,7 +12,10 @@ from matplotlib import cm
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.linear_model import LinearRegression
 import seaborn as sns
-run_path = "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-100-10s"
+# run_path = "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-100-10s"
+run_path = "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-ce-0.04-1-200"
+BASE_MODEL_PATH = "lucacasini/metamidipianophi3_4L"
+
 #%%
 # load all logs
 prelogs = pd.read_parquet(run_path + "/pre_eval/eval/rl_logs/0/logs.parquet")
@@ -44,7 +47,6 @@ import muspy
 import tempfile
 import soundfile as sf
 
-BASE_MODEL_PATH = "lucacasini/metamidipianophi3_6L_long"
 model = transformers.AutoModelForCausalLM.from_pretrained(BASE_MODEL_PATH, trust_remote_code=True, torch_dtype="auto")
 tokenizer = miditok.REMI.from_pretrained(BASE_MODEL_PATH)
 # set seed
@@ -52,10 +54,10 @@ tokenizer = miditok.REMI.from_pretrained(BASE_MODEL_PATH)
 SF_PATH = "soundfonts/Yamaha-C5-Salamander-JNv5_1.sf2"
 
 SAMPLE_RATE = 48_000
-MAX_AUDIO_DURATION = 10
+MAX_AUDIO_DURATION = 32
 MAX_LENGTH = 512
-MIN_DURATION = 8
-MAX_EMPTY_BEAT_RATE = 0.00
+MIN_DURATION = 10
+MAX_EMPTY_BEAT_RATE = 0.20
 
 processor = TinySoundfontSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION)
 
@@ -67,7 +69,44 @@ sample_size = 15
 sampled_prelogs = prelogs.sample(sample_size, random_state=42)
 
 import os
-os.makedirs("listening_test", exist_ok=True)
+out_dir = "artefacts/demo_examples"
+os.makedirs(out_dir, exist_ok=True)
+
+
+#%%
+from datasets import Dataset
+N_EVAL_PROMPTS = sample_size
+
+tst_ds = Dataset.load_from_disk("data/dataset_mmd_piano/test")
+tst_ds = tst_ds.shuffle()
+tst_ds = tst_ds.select(range(N_EVAL_PROMPTS))
+
+max_prompt_length = 4
+
+def extract_prompt(example):
+    token_ids = example["token_ids"]
+    # convert to tokens
+    tokens = tokenizer._ids_to_tokens(token_ids)
+    # find first tempo token
+    first_tempo_token = None
+    for i, token in enumerate(tokens):
+        if token.startswith("Tempo_"):
+            first_tempo_token = token
+            break
+    # find first timesig token
+    first_timesig_token = None
+    for i, token in enumerate(tokens):
+        if token.startswith("TimeSig_"):
+            first_timesig_token = token
+            break
+    prompt_tokens = ["Bar_None"] + [first_timesig_token] + ["Position_0"] + [first_tempo_token]
+    # convert to token ids
+    prompt_token_ids = tokenizer.tokens_to_ids(prompt_tokens)
+    # pad left with PAD tokens until max_prompt_length
+    prompt_token_ids = [tokenizer.vocab["PAD_None"]] * (max_prompt_length - len(prompt_token_ids)) + prompt_token_ids
+    return {"prompt": prompt_token_ids}
+
+tst_ds = tst_ds.map(extract_prompt)
 
 #%%
 prompt_index = 0
@@ -118,7 +157,7 @@ for i, row in sampled_prelogs.iterrows():
     # save audio
     audio = out_records[0]["audio"]
     print("Audio shape: ", audio.shape)
-    sf.write("listening_test/"+f"pre_index_{prompt_index}_prompt_{i}_{'_'.join(prompt_tokens)}_attempt_{attempt}".replace("/","d") + ".wav", audio.T, SAMPLE_RATE)
+    sf.write(out_dir+f"/pre_index_{prompt_index}_prompt_{i}_{'_'.join(prompt_tokens)}_attempt_{attempt}".replace("/","d") + ".wav", audio.T, SAMPLE_RATE)
     # save audio to file
     prompt_index += 1
 
@@ -126,7 +165,7 @@ for i, row in sampled_prelogs.iterrows():
     
 #%%
 
-model = transformers.AutoModelForCausalLM.from_pretrained("artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-100-10s/checkpoint-100", trust_remote_code=True, torch_dtype="auto")
+model = transformers.AutoModelForCausalLM.from_pretrained(run_path + "/checkpoint-200", trust_remote_code=True, torch_dtype="auto")
 model = model.to(device)
 prompt_index = 0
 for i, row in sampled_prelogs.iterrows():
@@ -176,7 +215,7 @@ for i, row in sampled_prelogs.iterrows():
     # save audio
     audio = out_records[0]["audio"]
     print("Audio shape: ", audio.shape)
-    sf.write("listening_test/"+f"post_index_{prompt_index}_prompt_{i}_{'_'.join(prompt_tokens)}_attempt_{attempt}".replace("/","d") + ".wav", audio.T, SAMPLE_RATE)
+    sf.write(out_dir+f"/post_index_{prompt_index}_prompt_{i}_{'_'.join(prompt_tokens)}_attempt_{attempt}".replace("/","d") + ".wav", audio.T, SAMPLE_RATE)
     # save audio to file
     prompt_index += 1
 

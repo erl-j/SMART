@@ -12,8 +12,16 @@ from matplotlib import cm
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.linear_model import LinearRegression
 import seaborn as sns
-run_path = "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-100-10s"
+import os
+output_dir = "plots"
+
+os.makedirs(output_dir, exist_ok=True)
+
+#%%
+# run_path = "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-100-10s"
 # run_path = "artefacts/all_runs_4/piano-long-dataset/aes-avg-0.04-1.0-100-10s/"
+run_path = "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-ce-0.04-1-200"
+# run_path = "artefacts/all_runs_5/piano-4l-dataset/aes-ce-0.04-1.0-200-linear-scale-rewards=True"
 #%%
 # load all logs
 prelogs = pd.read_parquet(run_path + "/pre_eval/eval/rl_logs/0/logs.parquet")
@@ -240,8 +248,8 @@ print("Number of logs with less than 10 notes: ", len(less_than_10_notes))
 #%%
 # Define custom names for the pre and post systems
 SYSTEM_NAMES = {
-    "pre": "base",  # Change this to your preferred name for "pre"
-    "post": "SMART"  # Change this to your preferred name for "post"
+    "pre": "base*",  # Change this to your preferred name for "pre"
+    "post": "SMART*"  # Change this to your preferred name for "post"
 }
 
 selected_metrics = {
@@ -339,7 +347,9 @@ plt.rcParams['axes.linewidth'] = 1.2     # Thicker axes
 # set background color to dark default
 plt.rcParams['axes.facecolor'] = '#EAEAF2'  # Set axes background to white
 
-
+# shift colour palette by 4
+# set colours
+sns.set_palette(sns.color_palette("Set3")[3:])
 
 # Create the figure
 fig, axs = plt.subplots(2, 4, figsize=(16, 8))
@@ -414,8 +424,8 @@ for i, (metric_key, metric_info) in enumerate(selected_metrics.items()):
 plt.tight_layout()
 
 # Save the figure
-plt.savefig('plots/music_metrics_comparison.pdf', dpi=300, bbox_inches='tight')
-plt.savefig('plots/music_metrics_comparison.png', dpi=300, bbox_inches='tight')
+plt.savefig(f'{output_dir}/music_metrics_comparison.pdf', dpi=300, bbox_inches='tight')
+plt.savefig(f'{output_dir}/music_metrics_comparison.png', dpi=300, bbox_inches='tight')
 plt.show()
 
 
@@ -445,7 +455,7 @@ for i, rew in enumerate(["aes_scores_CE", "aes_scores_CU", "aes_scores_PC", "aes
                 edgecolor='black',
                 linewidth=0.0)
         
-    # plt.gca().set_title(audiobox_full_names[rew.split("_")[-1]], fontsize=14, fontweight='bold')
+    plt.gca().set_title(audiobox_full_names[rew.split("_")[-1]], fontsize=14, fontweight='bold')
 
     
     plt.xlabel(audiobox_full_names[rew.split("_")[-1]], fontsize=12)
@@ -468,8 +478,8 @@ for i, rew in enumerate(["aes_scores_CE", "aes_scores_CU", "aes_scores_PC", "aes
     plt.gca().yaxis.set_major_locator(plt.MaxNLocator(integer=True, nbins=4))
 
 plt.tight_layout()
-plt.savefig('plots/aes_scores_comparison.pdf', dpi=300, bbox_inches='tight')
-plt.savefig('plots/aes_scores_comparison.png', dpi=300, bbox_inches='tight')
+plt.savefig(f'{output_dir}/aes_scores_comparison.pdf', dpi=300, bbox_inches='tight')
+plt.savefig(f'{output_dir}/aes_scores_comparison.png', dpi=300, bbox_inches='tight')
 plt.show()
 # %%
 
@@ -480,13 +490,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from tqdm import tqdm
+import os
 
 # Define MIDI directories
+# midi_dirs = {
+#     "base model": "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-100-10s/pre_eval/eval/midi/0",
+#     "w/ SMART 100 steps, beta=0.04": "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-100-10s/post_eval/eval/midi/0",
+#     "w/ SMART 1000 steps, beta=0.04": "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-1000-10s/post_eval/eval/midi/0",
+#     "w/ SMART 1000 steps, beta=0.00": "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.0-1.0-1000-10s/post_eval/eval/midi/0",
+# }
+
 midi_dirs = {
-    "base model": "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-100-10s/pre_eval/eval/midi/0",
-    "w/ SMART 100 steps, beta=0.04": "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-100-10s/post_eval/eval/midi/0",
-    "w/ SMART 1000 steps, beta=0.04": "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.04-1.0-1000-10s/post_eval/eval/midi/0",
-    "w/ SMART 1000 steps, beta=0.00": "artefacts/all_runs_3/piano-long-dataset/aes-ce-0.0-1.0-1000-10s/post_eval/eval/midi/0",
+    "base model": "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-ce-0.04-1-200/pre_eval/eval/midi/0",
+    "w/ SMART 200 iterations, beta=0.04": "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-ce-0.04-1-200/post_eval/eval/midi/0",
+    "w/ SMART 1000 iterations, beta=0.04": "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-ce-0.04-1-1000/post_eval/eval/midi/0",
+    "w/ SMART 1000 iterations, beta=0.00": "artefacts/all_runs_3/piano-4l-procedural-no-starting-note/aes-ce-0.0-1-1000/post_eval/eval/midi/0",
 }
 
 # Function to get piano roll
@@ -520,13 +538,17 @@ for key, midi_dir in midi_dirs.items():
     # sort midi_files
     midi_files = sorted(midi_files)
 
-    skip_str = ["641.mid"]
+    # skip those that symusic is super slow to load for some reason
+    skip_str = ["115.mid", "503.mid", "523.mid", "580.mid", "899.mid", "925.mid"]
     
     # Calculate piano rolls
     piano_rolls = []
     for i in tqdm(range(len(midi_files))):
         if any(s in midi_files[i] for s in skip_str):
             continue
+        print(f"Processing {midi_files[i]}...")
+        # print file size in bytes
+        print(f"File size: {os.path.getsize(midi_files[i])} bytes")
         # print(f"Processing {midi_files[i]}...")
         midi = symusic.Score(midi_files[i])
         pr = get_pr(midi)
@@ -567,9 +589,9 @@ hist_max_count = 0
 # Define model names for the columns
 model_names = {
     "base model": "Base Model",
-    "w/ SMART 100 steps, beta=0.04": "SMART, 100 steps\nβ=0.04",
-    "w/ SMART 1000 steps, beta=0.04": "SMART, 1000 steps\nβ=0.04",
-    "w/ SMART 1000 steps, beta=0.00": "SMART, 1000 steps\nβ=0.00"
+    "w/ SMART 200 iterations, beta=0.04": "SMART, 200 steps, β=0.04",
+    "w/ SMART 1000 iterations, beta=0.04": "SMART, 1000 steps, β=0.04",
+    "w/ SMART 1000 iterations, beta=0.00": "SMART, 1000 steps, β=0.00",
 }
 
 # Define a nice color palette
@@ -679,8 +701,8 @@ for i, key in enumerate(results.keys()):
 plt.subplots_adjust(top=0.88, wspace=0.3, hspace=0.4)  # More space between subplots
 
 # Save high-resolution versions
-plt.savefig('plots/midi_visualization_comparison.pdf', dpi=300, bbox_inches='tight')
-plt.savefig('plots/midi_visualization_comparison.png', dpi=300, bbox_inches='tight')
+plt.savefig(f'{output_dir}/midi_visualization_comparison.pdf', dpi=300, bbox_inches='tight')
+plt.savefig(f'{output_dir}/midi_visualization_comparison.png', dpi=300, bbox_inches='tight')
 
 plt.show()
 # %%

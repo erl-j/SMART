@@ -27,7 +27,7 @@ SOUNDFONTS = [
     "sgm",
      # "monalisa", "ephesus", "touhou", "arachno", 
      "fluidr3",
-    # "goldeneye", "ronaldiho", "casio", "n64", "gba", "candy", "808", 
+    #"goldeneye", "ronaldiho", "casio", "n64", "gba", "candy", "808", 
     "grandeur", "ydp",
       "yamaha"
       , "matrix"
@@ -52,7 +52,8 @@ SF_PATHS = {
     "grandeur": "soundfonts/[GD] The Grandeur D.sf2",
     "ydp": "soundfonts/YDP-GrandPiano-SF2-20160804/YDP-GrandPiano-20160804.sf2",
     "yamaha": "soundfonts/Yamaha-C5-Salamander-JNv5_1.sf2",
-    "matrix": "soundfonts/MatrixSF_v2.1.5.sf2"
+    "matrix": "soundfonts/MatrixSF_v2.1.5.sf2",
+    "touhou": "soundfonts/Touhou.sf2",
 }
 
 # Reward weights (from the original script)
