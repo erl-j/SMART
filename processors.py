@@ -131,8 +131,15 @@ class ScaleConsistencyReward(Processor):
             A float representing the scale consistency score
         """
         # Extract the MIDI data from the record
-        midi_data = muspy.read_midi(midi_path)
-        return muspy.scale_consistency(midi_data)
+        # 
+        sm = symusic.Score(midi_path)
+        # see if non drum track exists
+        non_drum_tracks = [track for track in sm.tracks if not track.is_drum]
+        if len(non_drum_tracks) == 0:
+            return 1.0
+        else:
+            midi_data = muspy.read_midi(midi_path)
+            return muspy.scale_consistency(midi_data)
 
     def __call__(self, records):
         for record in records:
@@ -140,7 +147,7 @@ class ScaleConsistencyReward(Processor):
                 record["sm"].dump_midi(f.name)
                 record["scale_consistency"] = self.get_scale_consistency(f.name)
                 record["normalized_rewards"]["scale_consistency"] = record["scale_consistency"]
-
+        return records
 class AudioBoxAesRewardProcessor(Processor):
     def __init__(self,):
         self.aes_predictor = initialize_predictor()
@@ -483,7 +490,6 @@ class CLAPZeroShotClassificationRewardProcessor(Processor):
         scores = torch.nn.functional.cosine_similarity(audio_embed, torch.stack(self.text_embeds), dim=-1)
         # get softmax
         scores = torch.nn.functional.softmax(scores / self.temperature, dim=0).T
-        print(f"Scores: {scores.shape}")
         return scores
     
     def __call__(self, records):
@@ -491,7 +497,6 @@ class CLAPZeroShotClassificationRewardProcessor(Processor):
         audio = [record["audio"] for record in records]
         raw_scores = self.score_clap(audio)
 
-        print(f"Raw scores: {raw_scores.shape}")
 
         # Apply rewards to records
         for i, record in enumerate(records):

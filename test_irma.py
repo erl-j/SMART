@@ -5,7 +5,8 @@ from util import preview_sm
 from symusic import BuiltInSF3, Synthesizer
 import IPython.display as ipd
 
-checkpoint = "outputs/mt/silvery-forest-28/copies/checkpoint-850000"
+# checkpoint = "outputs/mt/silvery-forest-28/copies/checkpoint-850000"
+checkpoint = "artefacts/all_runs_5/irma-dataset/ce-sc-iou-0.04-1.0-1000-linear-scale-rewards=True/checkpoint-1000"
 
 from tokenisation import IrmaTokenizer, IrmaTokenizerConfig
 
@@ -31,6 +32,7 @@ tokenizer.to_json(tokenizer_path)
 import torch
 
 prompt = ["BOS_None"]
+
 input_ids = torch.tensor(tokenizer.tokens_to_ids(prompt))[None,...]
 
 # generate a sequence
@@ -42,7 +44,7 @@ out = model.generate(
     bos_token_id=tokenizer.token_to_idx["BOS_None"],
     eos_token_id=tokenizer.token_to_idx["EOS_None"],
     num_return_sequences=1,
-    temperature=1.0,
+    temperature=0.8,
     use_cache=True
     # top_k=1,
     # top_p=0.95,
@@ -52,10 +54,13 @@ out = model.generate(
 tokens = tokenizer.ids_to_tokens(out[0].tolist())
 sm = tokenizer.tokens_to_midi(tokens)
 
-
-#%%
 print(tokens)
+
+print(sm.note_num())
+
 preview_sm(sm)
+#%%
+
 
 # replace drums
 # take head (everything before the first track_None)
@@ -143,7 +148,7 @@ out = model.generate(
     bos_token_id=tokenizer.token_to_idx["BOS_None"],
     eos_token_id=tokenizer.token_to_idx["EOS_None"],
     num_return_sequences=1,
-    temperature=1.0,
+    temperature=0.85,
     use_cache=True
 )
 
@@ -151,6 +156,8 @@ out = model.generate(
 tokens = tokenizer.ids_to_tokens(out[0].tolist())
 sm = tokenizer.tokens_to_midi(tokens)
 preview_sm(sm)
+
+print(sm.note_num())
 
 sm.dump_midi("artefacts/a_irma_test_b.mid")
 

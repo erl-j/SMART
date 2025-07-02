@@ -28,21 +28,21 @@ random.seed(SEED)
 
 GRADIENT_ACCUMULATION_STEPS = 1
 USE_BF16 = True
-NUM_GENERATIONS=8
+NUM_GENERATIONS=3
 
 TEMPERATURE = 1.0
 NUM_ITERATIONS = 1
 SCALE_REWARDS = True
 
-NUM_TRAIN_STEPS = 1000
+NUM_TRAIN_STEPS = 200
 LEARNING_RATE = 1e-4
 SEARCH_SAMPLING_PARAMS = False  
-SCHEDULE_TYPE = "linear"
+SCHEDULE_TYPE = "constant"
 BETA = 0.04
 
 # MODEL = "piano" #"MIL"
 # PROMPT_SOURCE = "procedural" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
-MODEL = "irma"
+MODEL = "piano"
 PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
 # MODEL = "mil"
 # PROMPT_SOURCE = "dataset" #"dataset" # "dataset" "no_prompt", "procedural", "piano"
@@ -50,7 +50,7 @@ AUDIO_SAVE_INTERVAL = NUM_ITERATIONS*10
 SAVE_STEPS = 20
 N_EVAL_PROMPTS=100
 
-BATCH_SIZE=32#64 if "piano" in MODEL else 32
+BATCH_SIZE=33#64 if "piano" in MODEL else 32
 
 N_PROMPTS = (NUM_TRAIN_STEPS * BATCH_SIZE // NUM_GENERATIONS) * 10
 
@@ -69,7 +69,7 @@ REWARD_WEIGHTS = {
 }
 
 # get latest checkpoint
-OUTPUT_DIR = f"artefacts/all_runs_5/{MODEL}-{PROMPT_SOURCE}/aes-ce-{BETA}-{TEMPERATURE}-{NUM_TRAIN_STEPS}-{SCHEDULE_TYPE}-scale-rewards={SCALE_REWARDS}"
+OUTPUT_DIR = f"artefacts/all_runs_5/{MODEL}-{PROMPT_SOURCE}/ce-sc-iou-{BETA}-{TEMPERATURE}-{NUM_TRAIN_STEPS}-{SCHEDULE_TYPE}-scale-rewards={SCALE_REWARDS}"
 
 
 # warn if output dir exists and may be overwritten
@@ -213,7 +213,8 @@ match MODEL:
                 TinySoundfontSynthProcessor(SF_PATH, SAMPLE_RATE, MAX_AUDIO_DURATION),
                 AudioBoxAesRewardProcessor(),
                 TrackPromptAdherenceRewardProcessor(),
-                PamRewardProcessor(sample_rate=SAMPLE_RATE, prompt_configs=prompt_pairs,temperature=0.25)
+                ScaleConsistencyReward(),
+                # PamRewardProcessor(sample_rate=SAMPLE_RATE, prompt_configs=prompt_pairs,temperature=0.25)
             ],
             reward_weights = REWARD_WEIGHTS,
             output_dir=OUTPUT_DIR
