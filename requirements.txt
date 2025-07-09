@@ -1,4 +1,7 @@
 transformers
+datasets
 miditok
 audiobox_aesthetics
 trl
+tqdm
+symusic

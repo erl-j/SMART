@@ -1,27 +1,24 @@
 
+import datetime
 import os
 import tempfile
-from tqdm import tqdm
+import threading
+
+import einops
+import muspy
 import numpy as np
+import symusic
+import tinysoundfont
 import torch
 from datasets import Dataset
-from symusic import dump_wav
-from audiobox_aesthetics.infer import initialize_predictor
-import tinysoundfont
-import numpy as np
-from symusic import Synthesizer
-import symusic
-from util import crop_sm, sm_seconds
-import datetime
-import numpy as np
-import tempfile
-import tinysoundfont
-import os
 from joblib import Parallel, delayed, parallel_backend
-import threading
-import einops
 from mad_metric import compute_mad
-import muspy
+from symusic import Synthesizer, dump_wav
+from tqdm import tqdm
+from transformers import ClapModel, ClapProcessor
+
+from audiobox_aesthetics.infer import initialize_predictor
+from util import crop_sm, sm_seconds
 
 class RewardManager:
     def __init__(self, processors, reward_weights, output_dir):
@@ -148,6 +145,7 @@ class ScaleConsistencyReward(Processor):
                 record["scale_consistency"] = self.get_scale_consistency(f.name)
                 record["normalized_rewards"]["scale_consistency"] = record["scale_consistency"]
         return records
+        
 class AudioBoxAesRewardProcessor(Processor):
     def __init__(self,):
         self.aes_predictor = initialize_predictor()
