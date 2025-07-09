@@ -1,7 +1,7 @@
 # SMART: Tuning a symbolic music generation system with an audio domain aesthetic reward
 
 
-![SMART System Overview](misc/diagram.pdf)
+![SMART System Overview](misc/diagram.png)
 
 This repository contains the implementation for our paper on using aesthetic ratings to finetune symbolic music generation systems with reinforcement learning.
 

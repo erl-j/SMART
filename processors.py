@@ -12,7 +12,6 @@ import tinysoundfont
 import torch
 from datasets import Dataset
 from joblib import Parallel, delayed, parallel_backend
-from mad_metric import compute_mad
 from symusic import Synthesizer, dump_wav
 from tqdm import tqdm
 from transformers import ClapModel, ClapProcessor
@@ -588,29 +587,6 @@ class DrumsAreHumanlyPlayableReward():
 class DrumsDynamicsReward():
     pass
 
-class MADRewardProcessor():     
-
-    def __init__(self, reference_dir):
-        self.reference_dir = reference_dir
-
-    def __call__(self, records):
-        #  first save the audios to a temp file
-        for record in records:
-            # create a temporary directory
-            with tempfile.TemporaryDirectory() as tmpdirname:
-                # save the audio to a temp file
-                audio_path = os.path.join(tmpdirname, "audio.wav")
-                dump_wav(audio_path, record["audio"], record["sample_rate"])
-                # get the mad score
-                tmpdir_path = os.path.abspath(tmpdirname)
-                mad_score = compute_mad(eval_dir = tmpdir_path,
-                                        ref_dir=self.reference_dir)
-                record["normalized_rewards"]["mad"] = np.clip(10 - mad_score, 0, 10) / 10
-                record["mad_score"] = mad_score
-                # remove the temp file
-                os.remove(audio_path)
-        return records
-    
 
 
                 
