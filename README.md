@@ -1,5 +1,7 @@
 # SMART: Tuning a symbolic music generation system with an audio domain aesthetic reward
 
+[![Paper](https://img.shields.io/badge/arXiv-2504.16839-b31b1b.svg)](https://arxiv.org/abs/2504.16839)
+[![Audio Examples](https://img.shields.io/badge/Audio%20Examples-🎵-blue)](https://erl-j.github.io/SMART-demo/)
 
 ![SMART System Overview](misc/diagram.png)
 
@@ -7,8 +9,8 @@ This repository contains the implementation for our paper on using aesthetic rat
 
 ## Abstract
 
-Recent work has proposed training machine learning models to predict aesthetic ratings for music audio. Our work explores whether such models can be used to finetune a symbolic music generation system with reinforcement learning, and what effect this has on the system outputs.
-To test this, we use group relative policy optimization to finetune a piano MIDI model with Meta Audiobox Aesthetics ratings of audio-rendered outputs as the reward. We find that this optimization affects multiple low-level features of the generated outputs, and improves the average subjective ratings in a preliminary listening study with 14 participants. We also find that over-optimization dramatically reduces diversity of model outputs.
+Recent work has proposed training machine learning models to predict aesthetic ratings for music audio. Our work explores whether such models can be used to finetune a symbolic music generation system[...]
+To test this, we use group relative policy optimization to finetune a piano MIDI model with Meta Audiobox Aesthetics ratings of audio-rendered outputs as the reward. We find that this optimization aff[...]
 
 
 **Listening examples**: [https://erl-j.github.io/SMART-demo/](https://erl-j.github.io/SMART-demo/)
